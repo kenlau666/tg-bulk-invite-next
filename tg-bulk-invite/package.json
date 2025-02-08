@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "flask-dev": "FLASK_DEBUG=1 pip3 install -r requirements.txt && python3 -m flask --app api/index run -p 5328",
+    "next-dev": "next dev --turbopack",
+    "dev": "concurrently \"pnpm run next-dev\" \"pnpm run flask-dev\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -17,7 +19,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "telegram": "^2.19.10",
-    "util": "^0.12.5"
+    "util": "^0.12.5",
+    "concurrently": "^8.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
