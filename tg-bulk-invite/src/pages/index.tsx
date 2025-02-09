@@ -4,6 +4,19 @@ import TelegramLoginForm from "@/components/TelegramLoginForm";
 import VerificationCodeForm from "@/components/VerificationCodeForm";
 import { telegramService } from "@/services/telegramService";
 import GroupSelectionForm from "@/components/GroupSelectionForm";
+import InviteProgress from "@/components/InviteProgress";
+
+interface Participant {
+  id: number;
+  firstName: string | null;
+  status: 'invited' | 'skipped' | 'pending';
+}
+
+interface Stats {
+  total: number;
+  invited: number;
+  skipped: number;
+}
 
 export default function Home() {
   const [status, setStatus] = useState<{
@@ -19,6 +32,9 @@ export default function Home() {
     phoneNumber: string;
   } | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [stats, setStats] = useState<Stats>({ total: 0, invited: 0, skipped: 0 });
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleFormSubmit = async (formData: {
     apiId: string;
@@ -71,6 +87,7 @@ export default function Home() {
     targetGroup: string;
   }) => {
     try {
+      setIsProcessing(true);
       setStatus({ message: 'Processing group members...', type: 'info' });
       const result = await telegramService.getParticipants({
         sourceGroups: data.sourceGroups,
@@ -78,12 +95,16 @@ export default function Home() {
         sessionId: sessionId
       });
       
+      setParticipants(result.participants);
+      setStats(result.stats);
       setStatus({ message: result.message, type: 'success' });
     } catch (error) {
       setStatus({ 
         message: error instanceof Error ? error.message : 'An error occurred', 
         type: 'error' 
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -115,7 +136,17 @@ export default function Home() {
                 <VerificationCodeForm onSubmit={handleVerificationSubmit} />
               )
             ) : (
-              <GroupSelectionForm onSubmit={handleGroupSelection} />
+              <>
+                <GroupSelectionForm onSubmit={handleGroupSelection} disabled={isProcessing} />
+                {isProcessing && (
+                  <div className="mt-4 text-center text-sm text-gray-500">
+                    Processing... This may take a while.
+                  </div>
+                )}
+                {participants.length > 0 && (
+                  <InviteProgress participants={participants} stats={stats} />
+                )}
+              </>
             )}
           </div>
         </div>

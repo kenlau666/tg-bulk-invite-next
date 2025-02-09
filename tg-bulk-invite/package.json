@@ -3,24 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "flask-dev": "FLASK_DEBUG=1 pip3 install -r requirements.txt && python3 -m flask --app api/index run -p 5328",
+    "flask-dev": "pip3 install -r requirements.txt --user && python -m flask --app api/index run -p 5328",
     "next-dev": "next dev --turbopack",
-    "dev": "concurrently \"pnpm run next-dev\" \"pnpm run flask-dev\"",
+    "dev": "concurrently \"npm run next-dev\" \"npm run flask-dev\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@types/js-cookie": "^3.0.6",
+    "axios": "^1.7.9",
     "buffer": "^6.0.3",
+    "concurrently": "^8.0.1",
     "js-cookie": "^3.0.5",
     "next": "15.1.6",
     "nookies": "^2.5.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "telegram": "^2.19.10",
-    "util": "^0.12.5",
-    "concurrently": "^8.0.1"
+    "util": "^0.12.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

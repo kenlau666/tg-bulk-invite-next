@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 export class TelegramService {
   async connect(data: {
     apiId: string;
@@ -7,22 +9,16 @@ export class TelegramService {
     sessionId?: string;
   }) {
     try {
-      const response = await fetch('/api/telegram/connect', {
-        method: 'POST',
+      const response = await axios.post('/api/connect', data, {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to connect to Telegram');
-      }
-
-      return await response.json();
-    } catch (error) {
+      return response.data; // Axios automatically parses the JSON response
+    } catch (error: any) {
       console.error('Connection error:', error);
-      throw error;
+      throw error.response ? error.response.data : error; // Handle error response
     }
   }
 
@@ -32,23 +28,16 @@ export class TelegramService {
     sessionId: string;
   }) {
     try {
-      const response = await fetch('/api/telegram/getParticipants', {
-        method: 'POST',
+      const response = await axios.post('/api/getParticipants', data, {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
       });
 
-      if (!response.ok) {
-        console.log(response);
-        throw new Error('Failed to get participants');
-      }
-
-      return await response.json();
-    } catch (error) {
+      return response.data; // Axios automatically parses the JSON response
+    } catch (error: any) {
       console.error('Error getting participants:', error);
-      throw error;
+      throw error.response ? error.response.data : error; // Handle error response
     }
   }
 }

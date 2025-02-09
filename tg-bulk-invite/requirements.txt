@@ -1,0 +1,2 @@
+Flask[async]>=3.0.3
+telethon>=1.32.0
