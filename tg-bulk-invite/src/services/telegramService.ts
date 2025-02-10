@@ -26,6 +26,7 @@ export class TelegramService {
     sourceGroups: string[];
     targetGroup: string;
     sessionId: string;
+    previouslyInvited?: number[];
   }) {
     try {
       const response = await axios.post('/api/getParticipants', data, {

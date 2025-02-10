@@ -8,6 +8,7 @@ from telethon.tl.functions.channels import InviteToChannelRequest
 from telethon.tl.types import InputPeerChannel, InputPeerChat
 import asyncio
 from functools import wraps
+import sys
 
 app = Flask(__name__)
 
@@ -117,6 +118,7 @@ async def get_participants():
     source_groups = data.get('sourceGroups')
     target_group = data.get('targetGroup')
     session_id = data.get('sessionId')
+    previously_invited = set(data.get('previouslyInvited', []))  # Get previously invited users
 
     try:
         if session_id not in active_clients:
@@ -147,16 +149,16 @@ async def get_participants():
         for group_link in source_groups:
             try:
                 participants = await client.get_participants(group_link)
-                print(f"Found {len(participants)} participants in {group_link}")
+                print(f"Found {len(participants)} participants in {group_link}", file=sys.stdout)
 
                 for participant in participants:
                     if participant.id in target_member_ids:
-                        print(f"{participant.first_name or 'User'} is already in target group")
+                        print(f"{participant.first_name or 'User'} is already in target group", file=sys.stdout)
                         skipped_count += 1
                         continue
 
-                    if participant.id in processed_users:
-                        print(f"{participant.first_name or 'User'} was already processed before")
+                    if participant.id in processed_users or participant.id in previously_invited:
+                        print(f"{participant.first_name or 'User'} was already processed before", file=sys.stdout)
                         skipped_count += 1
                         continue
 
@@ -164,14 +166,15 @@ async def get_participants():
                         # Add to contacts if not already added
                         try:
                             await client(AddContactRequest(
-                                id=participant.id,
-                                first_name=participant.first_name,
-                                last_name=participant.last_name,
-                                phone=participant.phone
+                                id=participant,
+                                first_name=participant.first_name or '',
+                                last_name=participant.last_name or '',
+                                phone=participant.phone or '',
+                                add_phone_privacy_exception=False
                             ))
-                            print(f"Added {participant.first_name or 'User'} to contacts")
+                            print(f"Added {participant.first_name or 'User'} to contacts", file=sys.stdout)
                         except Exception as e:
-                            print(f"Failed to add {participant.first_name or 'User'} to contacts: {str(e)}")
+                            print(f"Failed to add {participant.username or 'User'} to contacts: {str(e)}", file=sys.stderr)
 
                         # Add user based on group type
                         if is_channel:
@@ -180,7 +183,7 @@ async def get_participants():
                                 channel=target_entity,
                                 users=[participant]
                             ))
-                            print(f"Invited {participant.first_name or 'User'} to channel/supergroup")
+                            print(f"Invited {participant.first_name or 'User'} to channel/supergroup", file=sys.stdout)
                         else:
                             # For regular groups
                             await client(AddChatUserRequest(
@@ -188,7 +191,7 @@ async def get_participants():
                                 user_id=participant,
                                 fwd_limit=300
                             ))
-                            print(f"Added {participant.first_name or 'User'} to regular group")
+                            print(f"Added {participant.first_name or 'User'} to regular group", file=sys.stdout)
                         
                         # Mark as processed
                         processed_users.add(participant.id)
@@ -196,16 +199,16 @@ async def get_participants():
 
                         # Random delay between 1-3 minutes
                         delay = random.randint(60, 180)
-                        print(f"Waiting {delay} seconds before inviting {participant.first_name or 'User'}")
+                        print(f"Waiting {delay} seconds before inviting {participant.first_name or 'User'}", file=sys.stdout)
                         await asyncio.sleep(delay)
                         
                     except Exception as e:
-                        print(f"Failed to process {participant.first_name or 'User'}: {str(e)}")
+                        print(f"Failed to process {participant.first_name or 'User'}: {str(e)}", file=sys.stderr)
 
                     all_participants.append(participant)
 
             except Exception as e:
-                print(f"Error getting participants from {group_link}: {str(e)}")
+                print(f"Error getting participants from {group_link}: {str(e)}", file=sys.stderr)
 
         return jsonify({
             'success': True,
@@ -214,7 +217,7 @@ async def get_participants():
                 'id': p.id, 
                 'firstName': p.first_name,
                 'status': 'invited' if p.id in processed_users else 
-                         'skipped' if p.id in target_member_ids else 'pending'
+                         'skipped' if (p.id in target_member_ids or p.id in previously_invited) else 'pending'
             } for p in all_participants],
             'stats': {
                 'total': len(all_participants),
@@ -224,7 +227,7 @@ async def get_participants():
         })
 
     except Exception as e:
-        print(f"Error getting participants: {str(e)}")
+        print(f"Error getting participants: {str(e)}", file=sys.stderr)
         return jsonify({
             'success': False,
             'message': str(e)
@@ -232,6 +235,6 @@ async def get_participants():
 
 if __name__ == '__main__':
     try:
-        app.run(port=5328)
+        app.run(port=5328, debug=True)
     finally:
         loop.close() 

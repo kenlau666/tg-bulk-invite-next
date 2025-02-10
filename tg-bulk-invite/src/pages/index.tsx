@@ -5,6 +5,7 @@ import VerificationCodeForm from "@/components/VerificationCodeForm";
 import { telegramService } from "@/services/telegramService";
 import GroupSelectionForm from "@/components/GroupSelectionForm";
 import InviteProgress from "@/components/InviteProgress";
+import { useInvitedUsers } from '@/hooks/useInvitedUsers';
 
 interface Participant {
   id: number;
@@ -35,6 +36,8 @@ export default function Home() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, invited: 0, skipped: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentTargetGroup, setCurrentTargetGroup] = useState<string | null>(null);
+  const { invitedUsers, addInvitedUser, isUserInvited } = useInvitedUsers(currentTargetGroup);
 
   const handleFormSubmit = async (formData: {
     apiId: string;
@@ -88,13 +91,23 @@ export default function Home() {
   }) => {
     try {
       setIsProcessing(true);
+      setCurrentTargetGroup(data.targetGroup);
       setStatus({ message: 'Processing group members...', type: 'info' });
+      
       const result = await telegramService.getParticipants({
         sourceGroups: data.sourceGroups,
         targetGroup: data.targetGroup,
-        sessionId: sessionId
+        sessionId: sessionId,
+        previouslyInvited: invitedUsers
+          .filter(u => u.groupId === data.targetGroup)
+          .map(u => u.id)
       });
       
+      // Add newly invited users to localStorage
+      result.participants
+        .filter((p: { status: string }) => p.status === 'invited')
+        .forEach((p: any) => addInvitedUser(p, data.targetGroup));
+
       setParticipants(result.participants);
       setStats(result.stats);
       setStatus({ message: result.message, type: 'success' });
