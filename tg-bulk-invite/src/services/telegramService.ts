@@ -1,3 +1,31 @@
+import axios from 'axios';
+
+export interface Participant {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  username: string | null;
+  phone: string | null;
+  status: 'pending' | 'invited' | 'failed';
+}
+
+export interface TargetGroup {
+  id: number;
+  isChannel: boolean;
+}
+
+export interface GetParticipantsResponse {
+  success: boolean;
+  message: string;
+  participants: Participant[];
+  targetGroup: TargetGroup;
+}
+
+interface InvitedUser {
+  id: number;
+  groupId: string;
+}
+
 export class TelegramService {
   async connect(data: {
     apiId: string;
@@ -7,22 +35,16 @@ export class TelegramService {
     sessionId?: string;
   }) {
     try {
-      const response = await fetch('/api/telegram/connect', {
-        method: 'POST',
+      const response = await axios.post('/api/connect', data, {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to connect to Telegram');
-      }
-
-      return await response.json();
-    } catch (error) {
+      return response.data; // Axios automatically parses the JSON response
+    } catch (error: any) {
       console.error('Connection error:', error);
-      throw error;
+      throw error.response ? error.response.data : error; // Handle error response
     }
   }
 
@@ -30,25 +52,27 @@ export class TelegramService {
     sourceGroups: string[];
     targetGroup: string;
     sessionId: string;
+    previouslyInvited: InvitedUser[];
+  }): Promise<GetParticipantsResponse> {
+    try {
+      const response = await axios.post('/api/getParticipants', data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error getting participants:', error);
+      throw error.response ? error.response.data : error;
+    }
+  }
+
+  async inviteParticipant(data: {
+    sessionId: string;
+    participant: Participant;
   }) {
     try {
-      const response = await fetch('/api/telegram/getParticipants', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        console.log(response);
-        throw new Error('Failed to get participants');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error getting participants:', error);
-      throw error;
+      const response = await axios.post('/api/inviteParticipant', data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error inviting participant:', error);
+      throw error.response ? error.response.data : error;
     }
   }
 }
