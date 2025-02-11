@@ -222,14 +222,14 @@ async def invite_participant():
 
         try:
             # Add to contacts
-            # await client(AddContactRequest(
-            #     id=participant['id'],
-            #     first_name=participant['firstName'] or '',
-            #     last_name=participant['lastName'] or '',
-            #     phone=participant['phone'] or '',
-            #     add_phone_privacy_exception=False
-            # ))
-            # print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
+            await client(AddContactRequest(
+                id=participant['id'],
+                first_name=participant['firstName'] or '',
+                last_name=participant['lastName'] or '',
+                phone=participant['phone'] or '',
+                add_phone_privacy_exception=False
+            ))
+            print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
 
             # delay = 61
             # await asyncio.sleep(delay)
