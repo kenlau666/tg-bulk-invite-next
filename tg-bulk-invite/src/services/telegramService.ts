@@ -1,5 +1,31 @@
 import axios from 'axios';
 
+export interface Participant {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  username: string | null;
+  phone: string | null;
+  status: 'pending' | 'invited' | 'failed';
+}
+
+export interface TargetGroup {
+  id: number;
+  isChannel: boolean;
+}
+
+export interface GetParticipantsResponse {
+  success: boolean;
+  message: string;
+  participants: Participant[];
+  targetGroup: TargetGroup;
+}
+
+interface InvitedUser {
+  id: number;
+  groupId: string;
+}
+
 export class TelegramService {
   async connect(data: {
     apiId: string;
@@ -26,19 +52,27 @@ export class TelegramService {
     sourceGroups: string[];
     targetGroup: string;
     sessionId: string;
-    previouslyInvited?: number[];
-  }) {
+    previouslyInvited: InvitedUser[];
+  }): Promise<GetParticipantsResponse> {
     try {
-      const response = await axios.post('/api/getParticipants', data, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      return response.data; // Axios automatically parses the JSON response
+      const response = await axios.post('/api/getParticipants', data);
+      return response.data;
     } catch (error: any) {
       console.error('Error getting participants:', error);
-      throw error.response ? error.response.data : error; // Handle error response
+      throw error.response ? error.response.data : error;
+    }
+  }
+
+  async inviteParticipant(data: {
+    sessionId: string;
+    participant: Participant;
+  }) {
+    try {
+      const response = await axios.post('/api/inviteParticipant', data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error inviting participant:', error);
+      throw error.response ? error.response.data : error;
     }
   }
 }

@@ -12,8 +12,9 @@ import sys
 
 app = Flask(__name__)
 
-# Store active clients (in production, use a proper database)
+# Store active clients and their tasks
 active_clients = {}
+active_tasks = {}
 
 # Create and set a single event loop for the application
 loop = asyncio.new_event_loop()
@@ -111,6 +112,28 @@ class CodeRequiredException(Exception):
     def __init__(self, session_id):
         self.session_id = session_id
 
+@app.route('/api/stop', methods=['POST'])
+@async_route
+async def stop_process():
+    data = request.json
+    session_id = data.get('sessionId')
+    
+    if session_id in active_tasks and not active_tasks[session_id].done():
+        active_tasks[session_id].cancel()
+        try:
+            await active_tasks[session_id]
+        except asyncio.CancelledError:
+            pass
+        return jsonify({
+            'success': True,
+            'message': 'Process stopped'
+        })
+    
+    return jsonify({
+        'success': False,
+        'message': 'No active process found'
+    }), 400
+
 @app.route('/api/getParticipants', methods=['POST'])
 @async_route
 async def get_participants():
@@ -118,7 +141,7 @@ async def get_participants():
     source_groups = data.get('sourceGroups')
     target_group = data.get('targetGroup')
     session_id = data.get('sessionId')
-    previously_invited = set(data.get('previouslyInvited', []))  # Get previously invited users
+    previously_invited = data.get('previouslyInvited', [])  # Get all previously invited users
 
     try:
         if session_id not in active_clients:
@@ -128,22 +151,22 @@ async def get_participants():
             }), 400
 
         client = active_clients[session_id]['client']
-        all_participants = []
-        invited_count = 0
-        skipped_count = 0
+        eligible_participants = []
 
-        # Store already processed users to avoid duplicates
-        if 'processed_users' not in active_clients[session_id]:
-            active_clients[session_id]['processed_users'] = set()
-        processed_users = active_clients[session_id]['processed_users']
-
-        # Get target group participants
+        # Get target group participants and type
+        target_entity = await client.get_input_entity(target_group)
+        is_channel = isinstance(target_entity, InputPeerChannel)
         target_participants = await client.get_participants(target_group)
         target_member_ids = {p.id for p in target_participants}
 
-        # Get target input entity and determine group type
-        target_entity = await client.get_input_entity(target_group)
-        is_channel = isinstance(target_entity, InputPeerChannel)
+        # Store target entity in active_clients for later use
+        active_clients[session_id]['target_entity'] = target_entity
+        active_clients[session_id]['is_channel'] = is_channel
+
+        # Filter previously invited users for this target group
+        previously_invited_to_target = {
+            invite['id'] for invite in previously_invited 
+        }
 
         # Process source groups
         for group_link in source_groups:
@@ -152,82 +175,94 @@ async def get_participants():
                 print(f"Found {len(participants)} participants in {group_link}", file=sys.stdout)
 
                 for participant in participants:
-                    if participant.id in target_member_ids:
-                        print(f"{participant.first_name or 'User'} is already in target group", file=sys.stdout)
-                        skipped_count += 1
-                        continue
-
-                    if participant.id in processed_users or participant.id in previously_invited:
-                        print(f"{participant.first_name or 'User'} was already processed before", file=sys.stdout)
-                        skipped_count += 1
-                        continue
-
-                    try:
-                        # Add to contacts if not already added
-                        try:
-                            await client(AddContactRequest(
-                                id=participant,
-                                first_name=participant.first_name or '',
-                                last_name=participant.last_name or '',
-                                phone=participant.phone or '',
-                                add_phone_privacy_exception=False
-                            ))
-                            print(f"Added {participant.first_name or 'User'} to contacts", file=sys.stdout)
-                        except Exception as e:
-                            print(f"Failed to add {participant.username or 'User'} to contacts: {str(e)}", file=sys.stderr)
-
-                        # Add user based on group type
-                        if is_channel:
-                            # For supergroups and channels
-                            await client(InviteToChannelRequest(
-                                channel=target_entity,
-                                users=[participant]
-                            ))
-                            print(f"Invited {participant.first_name or 'User'} to channel/supergroup", file=sys.stdout)
-                        else:
-                            # For regular groups
-                            await client(AddChatUserRequest(
-                                chat_id=target_entity.chat_id,  # For InputPeerChat, we use chat_id
-                                user_id=participant,
-                                fwd_limit=300
-                            ))
-                            print(f"Added {participant.first_name or 'User'} to regular group", file=sys.stdout)
-                        
-                        # Mark as processed
-                        processed_users.add(participant.id)
-                        invited_count += 1
-
-                        # Random delay between 1-3 minutes
-                        delay = random.randint(60, 180)
-                        print(f"Waiting {delay} seconds before inviting {participant.first_name or 'User'}", file=sys.stdout)
-                        await asyncio.sleep(delay)
-                        
-                    except Exception as e:
-                        print(f"Failed to process {participant.first_name or 'User'}: {str(e)}", file=sys.stderr)
-
-                    all_participants.append(participant)
+                    if (participant.id not in target_member_ids and 
+                        participant.id not in previously_invited_to_target):
+                        eligible_participants.append({
+                            'id': participant.id,
+                            'firstName': participant.first_name,
+                            'lastName': participant.last_name,
+                            'username': participant.username,
+                            'phone': participant.phone,
+                            'status': 'pending'
+                        })
 
             except Exception as e:
                 print(f"Error getting participants from {group_link}: {str(e)}", file=sys.stderr)
 
         return jsonify({
             'success': True,
-            'message': f'Processed {len(all_participants)} participants: {invited_count} invited, {skipped_count} skipped',
-            'participants': [{
-                'id': p.id, 
-                'firstName': p.first_name,
-                'status': 'invited' if p.id in processed_users else 
-                         'skipped' if (p.id in target_member_ids or p.id in previously_invited) else 'pending'
-            } for p in all_participants],
-            'stats': {
-                'total': len(all_participants),
-                'invited': invited_count,
-                'skipped': skipped_count
-            }
+            'message': f'Found {len(eligible_participants)} eligible participants',
+            'participants': eligible_participants
         })
 
     except Exception as e:
         print(f"Error getting participants: {str(e)}", file=sys.stderr)
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/inviteParticipant', methods=['POST'])
+@async_route
+async def invite_participant():
+    data = request.json
+    session_id = data.get('sessionId')
+    participant = data.get('participant')
+
+    try:
+        if session_id not in active_clients:
+            return jsonify({
+                'success': False,
+                'message': 'No active session found'
+            }), 400
+
+        client = active_clients[session_id]['client']
+        target_entity = active_clients[session_id]['target_entity']
+        is_channel = active_clients[session_id]['is_channel']
+
+        try:
+            # Add to contacts
+            # await client(AddContactRequest(
+            #     id=participant['id'],
+            #     first_name=participant['firstName'] or '',
+            #     last_name=participant['lastName'] or '',
+            #     phone=participant['phone'] or '',
+            #     add_phone_privacy_exception=False
+            # ))
+            # print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
+
+            # delay = 61
+            # await asyncio.sleep(delay)
+
+            # Invite to group
+            if is_channel:
+                await client(InviteToChannelRequest(
+                    channel=target_entity,
+                    users=[participant['id']]
+                ))
+                print(f"Invited {participant['firstName'] or 'User'} to channel/supergroup", file=sys.stdout)
+            else:
+                await client(AddChatUserRequest(
+                    chat_id=target_entity.chat_id,
+                    user_id=participant['id'],
+                    fwd_limit=300
+                ))
+                print(f"Added {participant['firstName'] or 'User'} to regular group", file=sys.stdout)
+
+            return jsonify({
+                'success': True,
+                'message': 'Successfully invited participant'
+            })
+
+        except Exception as e:
+            print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+
+    except Exception as e:
+        print(f"Error inviting participant: {str(e)}", file=sys.stderr)
         return jsonify({
             'success': False,
             'message': str(e)

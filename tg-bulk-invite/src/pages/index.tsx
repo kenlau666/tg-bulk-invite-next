@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import TelegramLoginForm from "@/components/TelegramLoginForm";
 import VerificationCodeForm from "@/components/VerificationCodeForm";
 import { telegramService } from "@/services/telegramService";
@@ -10,7 +10,7 @@ import { useInvitedUsers } from '@/hooks/useInvitedUsers';
 interface Participant {
   id: number;
   firstName: string | null;
-  status: 'invited' | 'skipped' | 'pending';
+  status: 'invited' | 'skipped' | 'pending' | 'failed';
 }
 
 interface Stats {
@@ -38,6 +38,8 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentTargetGroup, setCurrentTargetGroup] = useState<string | null>(null);
   const { invitedUsers, addInvitedUser, isUserInvited } = useInvitedUsers(currentTargetGroup);
+  const [shouldStop, setShouldStop] = useState(false);
+  const stopRef = useRef(false);
 
   const handleFormSubmit = async (formData: {
     apiId: string;
@@ -88,29 +90,86 @@ export default function Home() {
   const handleGroupSelection = async (data: {
     sourceGroups: string[];
     targetGroup: string;
+    delaySeconds: number;
   }) => {
     try {
       setIsProcessing(true);
+      stopRef.current = false;
       setCurrentTargetGroup(data.targetGroup);
-      setStatus({ message: 'Processing group members...', type: 'info' });
+      setStatus({ message: 'Getting eligible participants...', type: 'info' });
       
       const result = await telegramService.getParticipants({
         sourceGroups: data.sourceGroups,
         targetGroup: data.targetGroup,
         sessionId: sessionId,
-        previouslyInvited: invitedUsers
-          .filter(u => u.groupId === data.targetGroup)
-          .map(u => u.id)
+        previouslyInvited: invitedUsers.filter(u => u.groupId === data.targetGroup)  // Send all invited users
       });
-      
-      // Add newly invited users to localStorage
-      result.participants
-        .filter((p: { status: string }) => p.status === 'invited')
-        .forEach((p: any) => addInvitedUser(p, data.targetGroup));
 
-      setParticipants(result.participants);
-      setStats(result.stats);
-      setStatus({ message: result.message, type: 'success' });
+      setParticipants(result.participants.map((p: Participant) => ({ 
+        ...p,
+        status: 'pending',
+        firstName: p.firstName || '',
+        id: Number(p.id)
+      })));
+      setStats({ total: result.participants.length, invited: 0, skipped: 0 });
+
+      // Then, invite them one by one with delay
+      for (const participant of result.participants) {
+        if (stopRef.current) {
+          setStatus({ message: 'Process stopped by user', type: 'info' });
+          break;
+        }
+
+        try {
+          await telegramService.inviteParticipant({
+            sessionId,
+            participant
+          });
+
+          // Update participant status and stats
+          setParticipants(prev => prev.map(p => 
+            p.id === participant.id ? { ...p, status: 'invited' } : p
+          ));
+          setStats(prev => ({ ...prev, invited: prev.invited + 1 }));
+          addInvitedUser({ id: participant.id }, data.targetGroup);
+
+          if (stopRef.current) break;
+
+          // Wait for the specified delay
+          await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(resolve, data.delaySeconds * 1000);
+            
+            if (stopRef.current) {
+              clearTimeout(timeoutId);
+              reject(new Error('Stopped by user'));
+            }
+          });
+
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Stopped by user') {
+            break;
+          }
+          console.error('Failed to invite participant:', error);
+          setParticipants(prev => prev.map(p => 
+            p.id === participant.id ? { ...p, status: 'failed' } : p
+          ));
+          setStats(prev => ({ ...prev, skipped: prev.skipped + 1 }));
+          addInvitedUser({ id: participant.id }, data.targetGroup);
+
+          await new Promise((resolve, reject) => {
+          const timeoutId = setTimeout(resolve, data.delaySeconds * 1000);
+          
+          if (stopRef.current) {
+            clearTimeout(timeoutId);
+            reject(new Error('Stopped by user'));
+          }
+          });
+        }
+      }
+
+      if (!stopRef.current) {
+        setStatus({ message: 'Process completed', type: 'success' });
+      }
     } catch (error) {
       setStatus({ 
         message: error instanceof Error ? error.message : 'An error occurred', 
@@ -118,7 +177,15 @@ export default function Home() {
       });
     } finally {
       setIsProcessing(false);
+      stopRef.current = false;
+      setShouldStop(false);
     }
+  };
+
+  const handleStop = () => {
+    stopRef.current = true;
+    setShouldStop(true);
+    setStatus({ message: 'Stopping process...', type: 'info' });
   };
 
   return (
@@ -152,12 +219,25 @@ export default function Home() {
               <>
                 <GroupSelectionForm onSubmit={handleGroupSelection} disabled={isProcessing} />
                 {isProcessing && (
-                  <div className="mt-4 text-center text-sm text-gray-500">
-                    Processing... This may take a while.
+                  <div className="mt-4 flex flex-col items-center space-y-4">
+                    <div className="text-center text-sm text-gray-500">
+                      Processing... This may take a while.
+                    </div>
+                    <button
+                      onClick={handleStop}
+                      disabled={shouldStop}
+                      className={`px-4 py-2 rounded-md text-sm font-medium text-white ${
+                        shouldStop 
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
+                      }`}
+                    >
+                      {shouldStop ? 'Stopping...' : 'Stop Process'}
+                    </button>
                   </div>
                 )}
                 {participants.length > 0 && (
-                  <InviteProgress participants={participants} stats={stats} />
+                  <InviteProgress participants={participants as any} stats={stats} />
                 )}
               </>
             )}

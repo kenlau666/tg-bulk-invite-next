@@ -3,13 +3,10 @@ import Cookies from 'js-cookie';
 
 export interface InvitedUser {
   id: number;
-  firstName: string | null;
   groupId: string;
-  timestamp: number;
 }
 
 const COOKIE_NAME = 'invitedUsers';
-const COOKIE_MAX_AGE = 30; // days
 
 export function useInvitedUsers(targetGroup: string | null) {
   const [invitedUsers, setInvitedUsers] = useState<InvitedUser[]>([]);
@@ -36,7 +33,6 @@ export function useInvitedUsers(targetGroup: string | null) {
         // Cookies have size limits, so we'll keep only the last 1000 entries
         const limitedUsers = invitedUsers.slice(-1000);
         Cookies.set(COOKIE_NAME, JSON.stringify(limitedUsers), {
-          expires: COOKIE_MAX_AGE,
           sameSite: 'strict',
           secure: process.env.NODE_ENV === 'production'
         });
@@ -46,7 +42,7 @@ export function useInvitedUsers(targetGroup: string | null) {
     }
   }, [invitedUsers]);
 
-  const addInvitedUser = (user: { id: number; firstName: string | null }, groupId: string) => {
+  const addInvitedUser = (user: { id: number }, groupId: string) => {
     setInvitedUsers(prev => {
       // Check if user is already invited to this group
       const exists = prev.some(u => u.id === user.id && u.groupId === groupId);
@@ -55,9 +51,7 @@ export function useInvitedUsers(targetGroup: string | null) {
       // Add new user and remove oldest entries if we exceed 1000
       const newUsers = [...prev, {
         id: user.id,
-        firstName: user.firstName,
-        groupId,
-        timestamp: Date.now()
+        groupId
       }];
 
       // Keep only the last 1000 entries
