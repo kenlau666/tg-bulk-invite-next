@@ -75,6 +75,19 @@ export class TelegramService {
       throw error.response ? error.response.data : error;
     }
   }
+
+  async startBackgroundInvite(data: {
+    sessionId: string;
+    delaySeconds: number;
+  }) {
+    try {
+      const response = await axios.post('/api/startBackgroundInvite', data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error starting background invite:', error);
+      throw error.response ? error.response.data : error;
+    }
+  }
 }
 
 export const telegramService = new TelegramService();

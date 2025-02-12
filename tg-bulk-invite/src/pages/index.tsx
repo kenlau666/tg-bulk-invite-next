@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import TelegramLoginForm from "@/components/TelegramLoginForm";
 import VerificationCodeForm from "@/components/VerificationCodeForm";
 import { telegramService } from "@/services/telegramService";
@@ -182,6 +182,43 @@ export default function Home() {
     }
   };
 
+  const handleBackgroundInvite = async (data: {
+    sourceGroups: string[];
+    targetGroup: string;
+    delaySeconds: number;
+  }) => {
+    try {
+      setIsProcessing(true);
+      setCurrentTargetGroup(data.targetGroup);
+      setStatus({ message: 'Getting eligible participants...', type: 'info' });
+      
+      const result = await telegramService.getParticipants({
+        sourceGroups: data.sourceGroups,
+        targetGroup: data.targetGroup,
+        sessionId: sessionId,
+        previouslyInvited: invitedUsers
+      });
+
+      // Start background invite process
+      await telegramService.startBackgroundInvite({
+        sessionId,
+        delaySeconds: data.delaySeconds
+      });
+
+      setStatus({ 
+        message: 'Background invite process started. You can close this window.', 
+        type: 'success' 
+      });
+    } catch (error) {
+      setStatus({ 
+        message: error instanceof Error ? error.message : 'An error occurred', 
+        type: 'error' 
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleStop = () => {
     stopRef.current = true;
     setShouldStop(true);
@@ -217,7 +254,11 @@ export default function Home() {
               )
             ) : (
               <>
-                <GroupSelectionForm onSubmit={handleGroupSelection} disabled={isProcessing} />
+                <GroupSelectionForm 
+                  onSubmit={handleGroupSelection} 
+                  onBackgroundSubmit={handleBackgroundInvite}
+                  disabled={isProcessing}
+                />
                 {isProcessing && (
                   <div className="mt-4 flex flex-col items-center space-y-4">
                     <div className="text-center text-sm text-gray-500">

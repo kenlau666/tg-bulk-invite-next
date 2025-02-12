@@ -9,12 +9,17 @@ from telethon.tl.types import InputPeerChannel, InputPeerChat
 import asyncio
 from functools import wraps
 import sys
+from threading import Thread
+import time
 
 app = Flask(__name__)
 
 # Store active clients and their tasks
 active_clients = {}
 active_tasks = {}
+
+# Add this global variable to store background tasks
+background_tasks = {}
 
 # Create and set a single event loop for the application
 loop = asyncio.new_event_loop()
@@ -189,6 +194,9 @@ async def get_participants():
             except Exception as e:
                 print(f"Error getting participants from {group_link}: {str(e)}", file=sys.stderr)
 
+        # Store eligible participants for background invite
+        active_clients[session_id]['eligible_participants'] = eligible_participants
+
         return jsonify({
             'success': True,
             'message': f'Found {len(eligible_participants)} eligible participants',
@@ -263,6 +271,78 @@ async def invite_participant():
 
     except Exception as e:
         print(f"Error inviting participant: {str(e)}", file=sys.stderr)
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/startBackgroundInvite', methods=['POST'])
+@async_route
+async def start_background_invite():
+    data = request.json
+    session_id = data.get('sessionId')
+    delay_seconds = data.get('delaySeconds', 60)
+
+    if session_id not in active_clients:
+        return jsonify({
+            'success': False,
+            'message': 'No active session found'
+        }), 400
+
+    client = active_clients[session_id]['client']
+    target_entity = active_clients[session_id]['target_entity']
+    is_channel = active_clients[session_id]['is_channel']
+    participants = active_clients[session_id].get('eligible_participants', [])
+
+    if not participants:
+        return jsonify({
+            'success': False,
+            'message': 'No participants to invite. Please get participants first.'
+        }), 400
+
+    try:
+        for participant in participants:
+            try:
+                # Add to contacts
+                await client(AddContactRequest(
+                    id=participant['id'],
+                    first_name=participant['firstName'] or '',
+                    last_name=participant['lastName'] or '',
+                    phone=participant['phone'] or '',
+                    add_phone_privacy_exception=False
+                ))
+                print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
+
+                # Invite to group
+                if is_channel:
+                    await client(InviteToChannelRequest(
+                        channel=target_entity,
+                        users=[participant['id']]
+                    ))
+                    print(f"Invited {participant['firstName'] or 'User'} to channel/supergroup", file=sys.stdout)
+                else:
+                    await client(AddChatUserRequest(
+                        chat_id=target_entity.chat_id,
+                        user_id=participant['id'],
+                        fwd_limit=300
+                    ))
+                    print(f"Added {participant['firstName'] or 'User'} to regular group", file=sys.stdout)
+
+                # Wait for the specified delay before next invite
+                if participant != participants[-1]:  # Don't delay after the last invite
+                    await asyncio.sleep(delay_seconds)
+
+            except Exception as e:
+                print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                continue
+
+        return jsonify({
+            'success': True,
+            'message': 'Background invite process completed'
+        })
+
+    except Exception as e:
+        print(f"Error in background invite process: {str(e)}", file=sys.stderr)
         return jsonify({
             'success': False,
             'message': str(e)
