@@ -199,6 +199,10 @@ export default function Home() {
         previouslyInvited: invitedUsers
       });
 
+      result.participants.forEach(participant => {
+        addInvitedUser({ id: participant.id }, data.targetGroup);
+      });
+      
       // Start background invite process
       await telegramService.startBackgroundInvite({
         sessionId,
