@@ -59,7 +59,7 @@ export default function Home() {
       setStatus({ message: result.message, type: 'info' });
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     }
@@ -81,7 +81,7 @@ export default function Home() {
       setShowVerificationForm(false);
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     }
@@ -172,7 +172,7 @@ export default function Home() {
       }
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     } finally {
@@ -215,7 +215,7 @@ export default function Home() {
       });
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     } finally {
