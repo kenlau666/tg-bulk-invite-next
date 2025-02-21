@@ -3,9 +3,9 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 import random
 from telethon.tl.functions.contacts import AddContactRequest
-from telethon.tl.functions.messages import AddChatUserRequest
+from telethon.tl.functions.messages import AddChatUserRequest, GetHistoryRequest
 from telethon.tl.functions.channels import InviteToChannelRequest
-from telethon.tl.types import InputPeerChannel, InputPeerChat
+from telethon.tl.types import InputPeerChannel, InputPeerChat, ChannelParticipantsSearch
 import asyncio
 from functools import wraps
 import sys
@@ -146,7 +146,9 @@ async def get_participants():
     source_groups = data.get('sourceGroups')
     target_group = data.get('targetGroup')
     session_id = data.get('sessionId')
-    previously_invited = data.get('previouslyInvited', [])  # Get all previously invited users
+    previously_invited = data.get('previouslyInvited', [])
+    max_per_group = data.get('maxPerGroup', 0)
+    delay_range = data.get('delayRange', {'min': 60, 'max': 60})
 
     try:
         if session_id not in active_clients:
@@ -157,27 +159,55 @@ async def get_participants():
 
         client = active_clients[session_id]['client']
         eligible_participants = []
-
-        # Get target group participants and type
+        
+        # Get target group info
         target_entity = await client.get_input_entity(target_group)
         is_channel = isinstance(target_entity, InputPeerChannel)
         target_participants = await client.get_participants(target_group)
         target_member_ids = {p.id for p in target_participants}
 
-        # Store target entity in active_clients for later use
+        # Store target entity in active_clients
         active_clients[session_id]['target_entity'] = target_entity
         active_clients[session_id]['is_channel'] = is_channel
+        active_clients[session_id]['delay_range'] = delay_range
 
-        # Filter previously invited users for this target group
         previously_invited_to_target = {
             invite['id'] for invite in previously_invited 
+            if invite['groupId'] == target_group
         }
 
-        # Process source groups
         for group_link in source_groups:
             try:
+                # Get group info first
+                group_entity = await client.get_entity(group_link)
+                total_participants = group_entity.participants_count
+
+                # Try to get participants directly first
                 participants = await client.get_participants(group_link)
+                
+                # If we can't get all participants, use message history
+                if len(participants) < total_participants:
+                    print(f"Hidden member list detected in {group_link}, using message history", file=sys.stdout)
+                    
+                    seen_senders = set()
+                    participants = []
+                    
+                    # Get messages and their senders
+                    async for message in client.iter_messages(group_entity, limit=1000):
+                        if message.sender_id and message.sender_id not in seen_senders:
+                            try:
+                                sender = await client.get_entity(message.sender_id)
+                                participants.append(sender)
+                                seen_senders.add(message.sender_id)
+                            except Exception as e:
+                                print(f"Error getting sender info: {str(e)}", file=sys.stderr)
+                                continue
+
                 print(f"Found {len(participants)} participants in {group_link}", file=sys.stdout)
+
+                # Apply max per group limit if set
+                if max_per_group > 0:
+                    participants = participants[:max_per_group]
 
                 for participant in participants:
                     if (participant.id not in target_member_ids and 
@@ -281,7 +311,7 @@ async def invite_participant():
 async def start_background_invite():
     data = request.json
     session_id = data.get('sessionId')
-    delay_seconds = data.get('delaySeconds', 60)
+    delay_range = data.get('delayRange', {'min': 60, 'max': 60})
 
     if session_id not in active_clients:
         return jsonify({
@@ -329,8 +359,8 @@ async def start_background_invite():
                     print(f"Added {participant['firstName'] or 'User'} to regular group", file=sys.stdout)
 
                 # Wait for the specified delay before next invite
-                if participant != participants[-1]:  # Don't delay after the last invite
-                    await asyncio.sleep(delay_seconds)
+                delay_seconds = random.randint(delay_range['min'], delay_range['max'])
+                await asyncio.sleep(delay_seconds)
 
             except Exception as e:
                 print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)

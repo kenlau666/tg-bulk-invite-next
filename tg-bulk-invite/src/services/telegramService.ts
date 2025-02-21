@@ -26,6 +26,11 @@ interface InvitedUser {
   groupId: string;
 }
 
+interface DelayRange {
+  min: number;
+  max: number;
+}
+
 export class TelegramService {
   async connect(data: {
     apiId: string;
@@ -53,6 +58,8 @@ export class TelegramService {
     targetGroup: string;
     sessionId: string;
     previouslyInvited: InvitedUser[];
+    maxPerGroup: number;
+    delayRange: DelayRange;
   }): Promise<GetParticipantsResponse> {
     try {
       const response = await axios.post('/api/getParticipants', data);
@@ -78,7 +85,7 @@ export class TelegramService {
 
   async startBackgroundInvite(data: {
     sessionId: string;
-    delaySeconds: number;
+    delayRange: DelayRange;
   }) {
     try {
       const response = await axios.post('/api/startBackgroundInvite', data);
