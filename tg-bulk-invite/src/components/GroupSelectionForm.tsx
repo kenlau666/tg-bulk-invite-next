@@ -103,7 +103,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
             value={maxPerGroup}
             onChange={(e) => setMaxPerGroup(Math.max(0, parseInt(e.target.value) || 0))}
             min="0"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
           />
         </div>
 
@@ -122,7 +122,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
                   min: Math.max(1, parseInt(e.target.value) || 1)
                 }))}
                 min="1"
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
                 placeholder="Min"
                 required
               />
@@ -137,7 +137,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
                   max: Math.max(prev.min, parseInt(e.target.value) || prev.min)
                 }))}
                 min={delayRange.min}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
                 placeholder="Max"
                 required
               />

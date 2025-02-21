@@ -4,13 +4,14 @@ from telethon.sessions import StringSession
 import random
 from telethon.tl.functions.contacts import AddContactRequest
 from telethon.tl.functions.messages import AddChatUserRequest, GetHistoryRequest
-from telethon.tl.functions.channels import InviteToChannelRequest
+from telethon.tl.functions.channels import InviteToChannelRequest, GetFullChannelRequest
 from telethon.tl.types import InputPeerChannel, InputPeerChat, ChannelParticipantsSearch
 import asyncio
 from functools import wraps
 import sys
 from threading import Thread
 import time
+from telethon.errors import ChatAdminRequiredError
 
 app = Flask(__name__)
 
@@ -180,49 +181,83 @@ async def get_participants():
             try:
                 # Get group info first
                 group_entity = await client.get_entity(group_link)
-                total_participants = group_entity.participants_count
-
-                # Try to get participants directly first
-                participants = await client.get_participants(group_link)
                 
-                # If we can't get all participants, use message history
-                if len(participants) < total_participants:
-                    print(f"Hidden member list detected in {group_link}, using message history", file=sys.stdout)
+                try:
+                    # Try to get full channel info
+                    full_channel = await client(GetFullChannelRequest(channel=group_entity))
+                    total_participants = full_channel.full_chat.participants_count
+                    print(f"Total participants in {group_link}: {total_participants}", file=sys.stdout)
                     
+                    # Try to get participants directly first
+                    participants = await client.get_participants(group_link)
+                    print(f"Directly accessible participants in {group_link}: {len(participants)}", file=sys.stdout)
+                    
+                    # If we can't get all participants, use message history
+                    if len(participants) < total_participants:
+                        print(f"Hidden member list detected in {group_link}, using message history", file=sys.stdout)
+                        
+                        seen_senders = set()
+                        participants = []
+                        
+                        # Get all messages without limit
+                        async for message in client.iter_messages(group_entity):
+                            if message.sender_id and message.sender_id not in seen_senders:
+                                try:
+                                    sender = await client.get_entity(message.sender_id)
+                                    participants.append(sender)
+                                    seen_senders.add(message.sender_id)
+                                    
+                                    # Print progress every 100 messages
+                                    if len(participants) % 100 == 0:
+                                        print(f"Found {len(participants)} unique participants from messages in {group_link}", file=sys.stdout)
+                                    
+                                except Exception as e:
+                                    print(f"Error getting sender info: {str(e)}", file=sys.stderr)
+                                    continue
+                                
+                    print(f"Total found {len(participants)} participants in {group_link}", file=sys.stdout)
+
+                    # Apply max per group limit if set
+                    if max_per_group > 0:
+                        original_count = len(participants)
+                        participants = participants[:max_per_group]
+                        print(f"Limited participants from {original_count} to {len(participants)} for {group_link}", file=sys.stdout)
+
+                    for participant in participants:
+                        if (participant.id not in target_member_ids and 
+                            participant.id not in previously_invited_to_target):
+                            eligible_participants.append({
+                                'id': participant.id,
+                                'firstName': participant.first_name,
+                                'lastName': participant.last_name,
+                                'username': participant.username,
+                                'phone': participant.phone,
+                                'status': 'pending'
+                            })
+
+                except ChatAdminRequiredError:
+                    print(f"Admin rights required to get full participant list for {group_link}", file=sys.stderr)
+                    # Continue with message history approach
                     seen_senders = set()
                     participants = []
                     
-                    # Get messages and their senders
-                    async for message in client.iter_messages(group_entity, limit=1000):
+                    async for message in client.iter_messages(group_entity):
                         if message.sender_id and message.sender_id not in seen_senders:
                             try:
                                 sender = await client.get_entity(message.sender_id)
                                 participants.append(sender)
                                 seen_senders.add(message.sender_id)
+                                
+                                if len(participants) % 100 == 0:
+                                    print(f"Found {len(participants)} unique participants from messages in {group_link}", file=sys.stdout)
+                                    
                             except Exception as e:
                                 print(f"Error getting sender info: {str(e)}", file=sys.stderr)
                                 continue
 
-                print(f"Found {len(participants)} participants in {group_link}", file=sys.stdout)
-
-                # Apply max per group limit if set
-                if max_per_group > 0:
-                    participants = participants[:max_per_group]
-
-                for participant in participants:
-                    if (participant.id not in target_member_ids and 
-                        participant.id not in previously_invited_to_target):
-                        eligible_participants.append({
-                            'id': participant.id,
-                            'firstName': participant.first_name,
-                            'lastName': participant.last_name,
-                            'username': participant.username,
-                            'phone': participant.phone,
-                            'status': 'pending'
-                        })
-
             except Exception as e:
                 print(f"Error getting participants from {group_link}: {str(e)}", file=sys.stderr)
+                continue
 
         # Store eligible participants for background invite
         active_clients[session_id]['eligible_participants'] = eligible_participants
