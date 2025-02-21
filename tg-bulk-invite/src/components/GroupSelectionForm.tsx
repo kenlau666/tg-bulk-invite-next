@@ -57,7 +57,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
             id="sourceGroups"
             value={sourceGroups}
             onChange={(e) => setSourceGroups(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="https://t.me/group1                                           https://t.me/group2"
             rows={5}
             required
@@ -73,7 +73,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
             id="targetGroup"
             value={targetGroup}
             onChange={(e) => setTargetGroup(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="https://t.me/targetgroup"
             required
           />
@@ -93,7 +93,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
               className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               required
             />
-            <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
+            <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm font-medium text-gray-700">
               seconds
             </span>
           </div>
