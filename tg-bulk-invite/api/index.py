@@ -197,27 +197,27 @@ async def get_participants():
                         print(f"Hidden member list detected in {group_link}, using message history", file=sys.stdout)
                         
                         seen_senders = set()
-                        participants = []
+                        message_participants = []
                         
-                        # Get all messages without limit
-                        async for message in client.iter_messages(group_entity, limit=2):
-                            print(f"message: {message}", file=sys.stderr)
-                            asender = await client.get_entity(message.post_author)
-                            print(f"sender: {asender}", file=sys.stderr)
+                        # Get messages and process them
+                        messages = await client.get_messages(group_entity, limit=3000)
+                        for message in messages:                            
                             if message.sender_id and message.sender_id not in seen_senders:
                                 try:
                                     sender = await client.get_entity(message.sender_id)
-                                    participants.append(sender)
+                                    print(sender, file=sys.stderr)
+                                    message_participants.append(sender)
                                     seen_senders.add(message.sender_id)
-                                    
-                                    # Print progress every 100 messages
-                                    if len(participants) % 100 == 0:
-                                        print(f"Found {len(participants)} unique participants from messages in {group_link}", file=sys.stdout)
-                                    
+                                    print(f"Added sender: {sender.first_name} (ID: {message.sender_id})", file=sys.stderr)
                                 except Exception as e:
                                     print(f"Error getting sender info: {str(e)}", file=sys.stderr)
                                     continue
-                                
+                        
+                        
+                        # Combine participants from both methods
+                        participants.extend(message_participants)
+                        print(f"Added {len(message_participants)} participants from message history", file=sys.stdout)
+
                     print(f"Total found {len(participants)} participants in {group_link}", file=sys.stdout)
 
                     # Apply max per group limit if set
@@ -244,7 +244,8 @@ async def get_participants():
                     seen_senders = set()
                     participants = []
                     
-                    async for message in client.iter_messages(group_entity):
+                    messages = await client.get_messages(group_entity)
+                    async for message in messages:
                         if message.sender_id and message.sender_id not in seen_senders:
                             try:
                                 sender = await client.get_entity(message.sender_id)
