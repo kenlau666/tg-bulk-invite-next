@@ -180,7 +180,7 @@ async def get_participants():
         for group_link in source_groups:
             try:
                 # Get group info first
-                group_entity = await client.get_entity(group_link)
+                group_entity = await client.get_input_entity(group_link)
                 
                 try:
                     # Try to get full channel info
@@ -200,7 +200,10 @@ async def get_participants():
                         participants = []
                         
                         # Get all messages without limit
-                        async for message in client.iter_messages(group_entity):
+                        async for message in client.iter_messages(group_entity, limit=2):
+                            print(f"message: {message}", file=sys.stderr)
+                            asender = await client.get_entity(message.post_author)
+                            print(f"sender: {asender}", file=sys.stderr)
                             if message.sender_id and message.sender_id not in seen_senders:
                                 try:
                                     sender = await client.get_entity(message.sender_id)

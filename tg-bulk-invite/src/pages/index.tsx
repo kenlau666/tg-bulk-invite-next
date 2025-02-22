@@ -178,7 +178,7 @@ export default function Home() {
       }
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     } finally {
@@ -224,7 +224,7 @@ export default function Home() {
       });
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     } finally {
