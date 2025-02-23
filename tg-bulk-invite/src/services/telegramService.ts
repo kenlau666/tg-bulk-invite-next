@@ -60,6 +60,7 @@ export class TelegramService {
     previouslyInvited: InvitedUser[];
     maxPerGroup: number;
     delayRange: DelayRange;
+    maxMessages: number;
   }): Promise<GetParticipantsResponse> {
     try {
       const response = await axios.post('/api/getParticipants', data);

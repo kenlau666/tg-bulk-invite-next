@@ -92,6 +92,7 @@ export default function Home() {
     targetGroup: string;
     delayRange: { min: number; max: number };
     maxPerGroup: number;
+    maxMessages: number;
   }) => {
     try {
       setIsProcessing(true);
@@ -105,7 +106,8 @@ export default function Home() {
         sessionId: sessionId,
         previouslyInvited: invitedUsers,
         maxPerGroup: data.maxPerGroup,
-        delayRange: data.delayRange
+        delayRange: data.delayRange,
+        maxMessages: data.maxMessages
       });
 
       setParticipants(result.participants.map((p: Participant) => ({ 
@@ -193,6 +195,7 @@ export default function Home() {
     targetGroup: string;
     delayRange: { min: number; max: number };
     maxPerGroup: number;
+    maxMessages: number;
   }) => {
     try {
       setIsProcessing(true);
@@ -205,7 +208,8 @@ export default function Home() {
         sessionId: sessionId,
         previouslyInvited: invitedUsers,
         maxPerGroup: data.maxPerGroup,
-        delayRange: data.delayRange
+        delayRange: data.delayRange,
+        maxMessages: data.maxMessages
       });
 
       result.participants.forEach(participant => {

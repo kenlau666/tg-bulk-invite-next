@@ -150,6 +150,9 @@ async def get_participants():
     previously_invited = data.get('previouslyInvited', [])
     max_per_group = data.get('maxPerGroup', 0)
     delay_range = data.get('delayRange', {'min': 60, 'max': 60})
+    
+    # Ensure maxMessages is at least 1, default to 3000
+    max_messages = max(1, data.get('maxMessages', 3000))
 
     try:
         if session_id not in active_clients:
@@ -186,45 +189,33 @@ async def get_participants():
                     # Try to get full channel info
                     full_channel = await client(GetFullChannelRequest(channel=group_entity))
                     total_participants = full_channel.full_chat.participants_count
-                    print(f"Total participants in {group_link}: {total_participants}", file=sys.stdout)
                     
                     # Try to get participants directly first
                     participants = await client.get_participants(group_link)
-                    print(f"Directly accessible participants in {group_link}: {len(participants)}", file=sys.stdout)
                     
                     # If we can't get all participants, use message history
                     if len(participants) < total_participants:
-                        print(f"Hidden member list detected in {group_link}, using message history", file=sys.stdout)
-                        
                         seen_senders = set()
                         message_participants = []
                         
-                        # Get messages and process them
-                        messages = await client.get_messages(group_entity, limit=3000)
+                        # Get messages and process them with the max_messages limit
+                        messages = await client.get_messages(group_entity, limit=max_messages)
                         for message in messages:                            
                             if message.sender_id and message.sender_id not in seen_senders:
                                 try:
                                     sender = await client.get_entity(message.sender_id)
-                                    print(sender, file=sys.stderr)
                                     message_participants.append(sender)
                                     seen_senders.add(message.sender_id)
-                                    print(f"Added sender: {sender.first_name} (ID: {message.sender_id})", file=sys.stderr)
                                 except Exception as e:
                                     print(f"Error getting sender info: {str(e)}", file=sys.stderr)
                                     continue
                         
-                        
                         # Combine participants from both methods
                         participants.extend(message_participants)
-                        print(f"Added {len(message_participants)} participants from message history", file=sys.stdout)
-
-                    print(f"Total found {len(participants)} participants in {group_link}", file=sys.stdout)
 
                     # Apply max per group limit if set
                     if max_per_group > 0:
-                        original_count = len(participants)
                         participants = participants[:max_per_group]
-                        print(f"Limited participants from {original_count} to {len(participants)} for {group_link}", file=sys.stdout)
 
                     for participant in participants:
                         if (participant.id not in target_member_ids and 
@@ -244,20 +235,35 @@ async def get_participants():
                     seen_senders = set()
                     participants = []
                     
-                    messages = await client.get_messages(group_entity)
-                    async for message in messages:
+                    messages = await client.get_messages(group_entity, limit=max_messages)
+                    for message in messages:                            
                         if message.sender_id and message.sender_id not in seen_senders:
                             try:
                                 sender = await client.get_entity(message.sender_id)
-                                participants.append(sender)
+                                message_participants.append(sender)
                                 seen_senders.add(message.sender_id)
-                                
-                                if len(participants) % 100 == 0:
-                                    print(f"Found {len(participants)} unique participants from messages in {group_link}", file=sys.stdout)
-                                    
                             except Exception as e:
                                 print(f"Error getting sender info: {str(e)}", file=sys.stderr)
                                 continue
+                    
+                    # Combine participants from both methods
+                    participants.extend(message_participants)
+
+                    # Apply max per group limit if set
+                    if max_per_group > 0:
+                        participants = participants[:max_per_group]
+
+                    for participant in participants:
+                        if (participant.id not in target_member_ids and 
+                            participant.id not in previously_invited_to_target):
+                            eligible_participants.append({
+                                'id': participant.id,
+                                'firstName': participant.first_name,
+                                'lastName': participant.last_name,
+                                'username': participant.username,
+                                'phone': participant.phone,
+                                'status': 'pending'
+                            })
 
             except Exception as e:
                 print(f"Error getting participants from {group_link}: {str(e)}", file=sys.stderr)
@@ -306,7 +312,6 @@ async def invite_participant():
                 phone=participant['phone'] or '',
                 add_phone_privacy_exception=False
             ))
-            print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
 
             # delay = 61
             # await asyncio.sleep(delay)
@@ -317,14 +322,12 @@ async def invite_participant():
                     channel=target_entity,
                     users=[participant['id']]
                 ))
-                print(f"Invited {participant['firstName'] or 'User'} to channel/supergroup", file=sys.stdout)
             else:
                 await client(AddChatUserRequest(
                     chat_id=target_entity.chat_id,
                     user_id=participant['id'],
                     fwd_limit=300
                 ))
-                print(f"Added {participant['firstName'] or 'User'} to regular group", file=sys.stdout)
 
             return jsonify({
                 'success': True,
@@ -380,7 +383,6 @@ async def start_background_invite():
                     phone=participant['phone'] or '',
                     add_phone_privacy_exception=False
                 ))
-                print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
 
                 # Invite to group
                 if is_channel:
@@ -388,14 +390,12 @@ async def start_background_invite():
                         channel=target_entity,
                         users=[participant['id']]
                     ))
-                    print(f"Invited {participant['firstName'] or 'User'} to channel/supergroup", file=sys.stdout)
                 else:
                     await client(AddChatUserRequest(
                         chat_id=target_entity.chat_id,
                         user_id=participant['id'],
                         fwd_limit=300
                     ))
-                    print(f"Added {participant['firstName'] or 'User'} to regular group", file=sys.stdout)
 
                 # Wait for the specified delay before next invite
                 delay_seconds = random.randint(delay_range['min'], delay_range['max'])

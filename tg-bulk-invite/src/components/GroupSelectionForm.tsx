@@ -9,6 +9,7 @@ interface GroupSelectionFormProps {
       max: number;
     };
     maxPerGroup: number;
+    maxMessages: number;
   }) => void;
   onBackgroundSubmit: (data: {
     sourceGroups: string[];
@@ -18,6 +19,7 @@ interface GroupSelectionFormProps {
       max: number;
     };
     maxPerGroup: number;
+    maxMessages: number;
   }) => void;
   disabled?: boolean;
 }
@@ -30,6 +32,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
     min: 60,
     max: 60
   });
+  const [maxMessages, setMaxMessages] = useState<number>(3000);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +45,8 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
       sourceGroups: sourceGroupList,
       targetGroup: targetGroup.trim(),
       delayRange,
-      maxPerGroup
+      maxPerGroup,
+      maxMessages
     });
   };
 
@@ -56,7 +60,8 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
       sourceGroups: sourceGroupList,
       targetGroup: targetGroup.trim(),
       delayRange,
-      maxPerGroup
+      maxPerGroup,
+      maxMessages
     });
   };
 
@@ -145,6 +150,23 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
           </div>
           <p className="mt-1 text-sm text-gray-500">
             Recommended: 60-180 seconds to avoid rate limits
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="maxMessages" className="block text-sm font-medium text-gray-700">
+            Max Messages to Scan
+          </label>
+          <input
+            type="number"
+            id="maxMessages"
+            value={maxMessages}
+            onChange={(e) => setMaxMessages(Math.max(1, parseInt(e.target.value) || 1))}
+            min="1"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
+          />
+          <p className="mt-1 text-sm text-gray-500">
+            Higher values will find more members but take longer to process
           </p>
         </div>
 
