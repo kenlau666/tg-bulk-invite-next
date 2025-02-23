@@ -41,7 +41,7 @@ export default function TelegramLoginForm({ onSubmit }: TelegramLoginFormProps) 
             id="apiId"
             value={formData.apiId}
             onChange={handleChange}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="Enter your API ID"
             required
           />
@@ -57,7 +57,7 @@ export default function TelegramLoginForm({ onSubmit }: TelegramLoginFormProps) 
             id="apiHash"
             value={formData.apiHash}
             onChange={handleChange}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="Enter your API Hash"
             required
           />
@@ -73,7 +73,7 @@ export default function TelegramLoginForm({ onSubmit }: TelegramLoginFormProps) 
             id="phoneNumber"
             value={formData.phoneNumber}
             onChange={handleChange}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="+1234567890"
             required
           />

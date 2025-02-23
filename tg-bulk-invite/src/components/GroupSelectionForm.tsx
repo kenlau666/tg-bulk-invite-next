@@ -4,12 +4,22 @@ interface GroupSelectionFormProps {
   onSubmit: (data: {
     sourceGroups: string[];
     targetGroup: string;
-    delaySeconds: number;
+    delayRange: {
+      min: number;
+      max: number;
+    };
+    maxPerGroup: number;
+    maxMessages: number;
   }) => void;
   onBackgroundSubmit: (data: {
     sourceGroups: string[];
     targetGroup: string;
-    delaySeconds: number;
+    delayRange: {
+      min: number;
+      max: number;
+    };
+    maxPerGroup: number;
+    maxMessages: number;
   }) => void;
   disabled?: boolean;
 }
@@ -17,7 +27,12 @@ interface GroupSelectionFormProps {
 export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disabled }: GroupSelectionFormProps) {
   const [sourceGroups, setSourceGroups] = useState<string>('');
   const [targetGroup, setTargetGroup] = useState<string>('');
-  const [delaySeconds, setDelaySeconds] = useState<number>(60); // Default 1 minute
+  const [maxPerGroup, setMaxPerGroup] = useState<number>(0); // 0 means no limit
+  const [delayRange, setDelayRange] = useState({
+    min: 60,
+    max: 60
+  });
+  const [maxMessages, setMaxMessages] = useState<number>(3000);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +44,9 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
     onSubmit({
       sourceGroups: sourceGroupList,
       targetGroup: targetGroup.trim(),
-      delaySeconds: delaySeconds
+      delayRange,
+      maxPerGroup,
+      maxMessages
     });
   };
 
@@ -42,7 +59,9 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
     onBackgroundSubmit({
       sourceGroups: sourceGroupList,
       targetGroup: targetGroup.trim(),
-      delaySeconds: delaySeconds
+      delayRange,
+      maxPerGroup,
+      maxMessages
     });
   };
 
@@ -57,7 +76,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
             id="sourceGroups"
             value={sourceGroups}
             onChange={(e) => setSourceGroups(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="https://t.me/group1                                           https://t.me/group2"
             rows={5}
             required
@@ -73,32 +92,81 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
             id="targetGroup"
             value={targetGroup}
             onChange={(e) => setTargetGroup(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="https://t.me/targetgroup"
             required
           />
         </div>
 
         <div>
-          <label htmlFor="delaySeconds" className="block text-sm font-medium text-gray-700">
-            Delay Between Invites (seconds)
+          <label htmlFor="maxPerGroup" className="block text-sm font-medium text-gray-700">
+            Max Members per Source Group (0 for no limit)
           </label>
-          <div className="mt-1 flex rounded-md shadow-sm">
-            <input
-              type="number"
-              id="delaySeconds"
-              value={delaySeconds}
-              onChange={(e) => setDelaySeconds(Math.max(1, parseInt(e.target.value) || 1))}
-              min="1"
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              required
-            />
-            <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
-              seconds
-            </span>
+          <input
+            type="number"
+            id="maxPerGroup"
+            value={maxPerGroup}
+            onChange={(e) => setMaxPerGroup(Math.max(0, parseInt(e.target.value) || 0))}
+            min="0"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="delayRange" className="block text-sm font-medium text-gray-700">
+            Delay Range (seconds)
+          </label>
+          <div className="mt-1 grid grid-cols-2 gap-4">
+            <div className="flex rounded-md shadow-sm">
+              <input
+                type="number"
+                id="delayMin"
+                value={delayRange.min}
+                onChange={(e) => setDelayRange(prev => ({
+                  ...prev,
+                  min: Math.max(1, parseInt(e.target.value) || 1)
+                }))}
+                min="1"
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
+                placeholder="Min"
+                required
+              />
+            </div>
+            <div className="flex rounded-md shadow-sm">
+              <input
+                type="number"
+                id="delayMax"
+                value={delayRange.max}
+                onChange={(e) => setDelayRange(prev => ({
+                  ...prev,
+                  max: Math.max(prev.min, parseInt(e.target.value) || prev.min)
+                }))}
+                min={delayRange.min}
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
+                placeholder="Max"
+                required
+              />
+            </div>
           </div>
           <p className="mt-1 text-sm text-gray-500">
             Recommended: 60-180 seconds to avoid rate limits
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="maxMessages" className="block text-sm font-medium text-gray-700">
+            Max Messages to Scan
+          </label>
+          <input
+            type="number"
+            id="maxMessages"
+            value={maxMessages}
+            onChange={(e) => setMaxMessages(Math.max(1, parseInt(e.target.value) || 1))}
+            min="1"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
+          />
+          <p className="mt-1 text-sm text-gray-500">
+            Higher values will find more members but take longer to process
           </p>
         </div>
 

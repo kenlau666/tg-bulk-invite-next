@@ -3,14 +3,15 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 import random
 from telethon.tl.functions.contacts import AddContactRequest
-from telethon.tl.functions.messages import AddChatUserRequest
-from telethon.tl.functions.channels import InviteToChannelRequest
-from telethon.tl.types import InputPeerChannel, InputPeerChat
+from telethon.tl.functions.messages import AddChatUserRequest, GetHistoryRequest
+from telethon.tl.functions.channels import InviteToChannelRequest, GetFullChannelRequest
+from telethon.tl.types import InputPeerChannel, InputPeerChat, ChannelParticipantsSearch
 import asyncio
 from functools import wraps
 import sys
 from threading import Thread
 import time
+from telethon.errors import ChatAdminRequiredError
 
 app = Flask(__name__)
 
@@ -146,7 +147,12 @@ async def get_participants():
     source_groups = data.get('sourceGroups')
     target_group = data.get('targetGroup')
     session_id = data.get('sessionId')
-    previously_invited = data.get('previouslyInvited', [])  # Get all previously invited users
+    previously_invited = data.get('previouslyInvited', [])
+    max_per_group = data.get('maxPerGroup', 0)
+    delay_range = data.get('delayRange', {'min': 60, 'max': 60})
+    
+    # Ensure maxMessages is at least 1, default to 3000
+    max_messages = max(1, data.get('maxMessages', 3000))
 
     try:
         if session_id not in active_clients:
@@ -157,42 +163,111 @@ async def get_participants():
 
         client = active_clients[session_id]['client']
         eligible_participants = []
-
-        # Get target group participants and type
+        
+        # Get target group info
         target_entity = await client.get_input_entity(target_group)
         is_channel = isinstance(target_entity, InputPeerChannel)
         target_participants = await client.get_participants(target_group)
         target_member_ids = {p.id for p in target_participants}
 
-        # Store target entity in active_clients for later use
+        # Store target entity in active_clients
         active_clients[session_id]['target_entity'] = target_entity
         active_clients[session_id]['is_channel'] = is_channel
+        active_clients[session_id]['delay_range'] = delay_range
 
-        # Filter previously invited users for this target group
         previously_invited_to_target = {
             invite['id'] for invite in previously_invited 
+            if invite['groupId'] == target_group
         }
 
-        # Process source groups
         for group_link in source_groups:
             try:
-                participants = await client.get_participants(group_link)
-                print(f"Found {len(participants)} participants in {group_link}", file=sys.stdout)
+                # Get group info first
+                group_entity = await client.get_input_entity(group_link)
+                
+                try:
+                    # Try to get full channel info
+                    full_channel = await client(GetFullChannelRequest(channel=group_entity))
+                    total_participants = full_channel.full_chat.participants_count
+                    
+                    # Try to get participants directly first
+                    participants = await client.get_participants(group_link)
+                    
+                    # If we can't get all participants, use message history
+                    if len(participants) < total_participants:
+                        seen_senders = set()
+                        message_participants = []
+                        
+                        # Get messages and process them with the max_messages limit
+                        messages = await client.get_messages(group_entity, limit=max_messages)
+                        for message in messages:                            
+                            if message.sender_id and message.sender_id not in seen_senders:
+                                try:
+                                    sender = await client.get_entity(message.sender_id)
+                                    message_participants.append(sender)
+                                    seen_senders.add(message.sender_id)
+                                except Exception as e:
+                                    print(f"Error getting sender info: {str(e)}", file=sys.stderr)
+                                    continue
+                        
+                        # Combine participants from both methods
+                        participants.extend(message_participants)
 
-                for participant in participants:
-                    if (participant.id not in target_member_ids and 
-                        participant.id not in previously_invited_to_target):
-                        eligible_participants.append({
-                            'id': participant.id,
-                            'firstName': participant.first_name,
-                            'lastName': participant.last_name,
-                            'username': participant.username,
-                            'phone': participant.phone,
-                            'status': 'pending'
-                        })
+                    # Apply max per group limit if set
+                    if max_per_group > 0:
+                        participants = participants[:max_per_group]
+
+                    for participant in participants:
+                        if (participant.id not in target_member_ids and 
+                            participant.id not in previously_invited_to_target):
+                            eligible_participants.append({
+                                'id': participant.id,
+                                'firstName': participant.first_name,
+                                'lastName': participant.last_name,
+                                'username': participant.username,
+                                'phone': participant.phone,
+                                'status': 'pending'
+                            })
+
+                except ChatAdminRequiredError:
+                    print(f"Admin rights required to get full participant list for {group_link}", file=sys.stderr)
+                    # Continue with message history approach
+                    seen_senders = set()
+                    participants = []
+                    
+                    messages = await client.get_messages(group_entity, limit=max_messages)
+                    for message in messages:                            
+                        if message.sender_id and message.sender_id not in seen_senders:
+                            try:
+                                sender = await client.get_entity(message.sender_id)
+                                message_participants.append(sender)
+                                seen_senders.add(message.sender_id)
+                            except Exception as e:
+                                print(f"Error getting sender info: {str(e)}", file=sys.stderr)
+                                continue
+                    
+                    # Combine participants from both methods
+                    participants.extend(message_participants)
+
+                    # Apply max per group limit if set
+                    if max_per_group > 0:
+                        participants = participants[:max_per_group]
+
+                    for participant in participants:
+                        if (participant.id not in target_member_ids and 
+                            participant.id not in previously_invited_to_target):
+                            eligible_participants.append({
+                                'id': participant.id,
+                                'firstName': participant.first_name,
+                                'lastName': participant.last_name,
+                                'username': participant.username,
+                                'phone': participant.phone,
+                                'status': 'pending'
+                            })
 
             except Exception as e:
                 print(f"Error getting participants from {group_link}: {str(e)}", file=sys.stderr)
+                continue
 
         # Store eligible participants for background invite
         active_clients[session_id]['eligible_participants'] = eligible_participants
@@ -237,7 +312,6 @@ async def invite_participant():
                 phone=participant['phone'] or '',
                 add_phone_privacy_exception=False
             ))
-            print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
 
             # delay = 61
             # await asyncio.sleep(delay)
@@ -248,14 +322,12 @@ async def invite_participant():
                     channel=target_entity,
                     users=[participant['id']]
                 ))
-                print(f"Invited {participant['firstName'] or 'User'} to channel/supergroup", file=sys.stdout)
             else:
                 await client(AddChatUserRequest(
                     chat_id=target_entity.chat_id,
                     user_id=participant['id'],
                     fwd_limit=300
                 ))
-                print(f"Added {participant['firstName'] or 'User'} to regular group", file=sys.stdout)
 
             return jsonify({
                 'success': True,
@@ -281,7 +353,7 @@ async def invite_participant():
 async def start_background_invite():
     data = request.json
     session_id = data.get('sessionId')
-    delay_seconds = data.get('delaySeconds', 60)
+    delay_range = data.get('delayRange', {'min': 60, 'max': 60})
 
     if session_id not in active_clients:
         return jsonify({
@@ -311,7 +383,6 @@ async def start_background_invite():
                     phone=participant['phone'] or '',
                     add_phone_privacy_exception=False
                 ))
-                print(f"Added {participant['firstName'] or 'User'} to contacts", file=sys.stdout)
 
                 # Invite to group
                 if is_channel:
@@ -319,18 +390,16 @@ async def start_background_invite():
                         channel=target_entity,
                         users=[participant['id']]
                     ))
-                    print(f"Invited {participant['firstName'] or 'User'} to channel/supergroup", file=sys.stdout)
                 else:
                     await client(AddChatUserRequest(
                         chat_id=target_entity.chat_id,
                         user_id=participant['id'],
                         fwd_limit=300
                     ))
-                    print(f"Added {participant['firstName'] or 'User'} to regular group", file=sys.stdout)
 
                 # Wait for the specified delay before next invite
-                if participant != participants[-1]:  # Don't delay after the last invite
-                    await asyncio.sleep(delay_seconds)
+                delay_seconds = random.randint(delay_range['min'], delay_range['max'])
+                await asyncio.sleep(delay_seconds)
 
             except Exception as e:
                 print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)

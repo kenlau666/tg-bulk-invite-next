@@ -59,7 +59,7 @@ export default function Home() {
       setStatus({ message: result.message, type: 'info' });
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     }
@@ -81,7 +81,7 @@ export default function Home() {
       setShowVerificationForm(false);
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     }
@@ -90,7 +90,9 @@ export default function Home() {
   const handleGroupSelection = async (data: {
     sourceGroups: string[];
     targetGroup: string;
-    delaySeconds: number;
+    delayRange: { min: number; max: number };
+    maxPerGroup: number;
+    maxMessages: number;
   }) => {
     try {
       setIsProcessing(true);
@@ -102,7 +104,10 @@ export default function Home() {
         sourceGroups: data.sourceGroups,
         targetGroup: data.targetGroup,
         sessionId: sessionId,
-        previouslyInvited: invitedUsers.filter(u => u.groupId === data.targetGroup)  // Send all invited users
+        previouslyInvited: invitedUsers,
+        maxPerGroup: data.maxPerGroup,
+        delayRange: data.delayRange,
+        maxMessages: data.maxMessages
       });
 
       setParticipants(result.participants.map((p: Participant) => ({ 
@@ -135,9 +140,10 @@ export default function Home() {
 
           if (stopRef.current) break;
 
-          // Wait for the specified delay
+          // Wait for a random delay within the range
+          const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
           await new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(resolve, data.delaySeconds * 1000);
+            const timeoutId = setTimeout(resolve, delayMs);
             
             if (stopRef.current) {
               clearTimeout(timeoutId);
@@ -156,13 +162,15 @@ export default function Home() {
           setStats(prev => ({ ...prev, skipped: prev.skipped + 1 }));
           addInvitedUser({ id: participant.id }, data.targetGroup);
 
+          // Wait for a random delay before next attempt
+          const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
           await new Promise((resolve, reject) => {
-          const timeoutId = setTimeout(resolve, data.delaySeconds * 1000);
-          
-          if (stopRef.current) {
-            clearTimeout(timeoutId);
-            reject(new Error('Stopped by user'));
-          }
+            const timeoutId = setTimeout(resolve, delayMs);
+            
+            if (stopRef.current) {
+              clearTimeout(timeoutId);
+              reject(new Error('Stopped by user'));
+            }
           });
         }
       }
@@ -172,7 +180,7 @@ export default function Home() {
       }
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     } finally {
@@ -185,7 +193,9 @@ export default function Home() {
   const handleBackgroundInvite = async (data: {
     sourceGroups: string[];
     targetGroup: string;
-    delaySeconds: number;
+    delayRange: { min: number; max: number };
+    maxPerGroup: number;
+    maxMessages: number;
   }) => {
     try {
       setIsProcessing(true);
@@ -196,7 +206,10 @@ export default function Home() {
         sourceGroups: data.sourceGroups,
         targetGroup: data.targetGroup,
         sessionId: sessionId,
-        previouslyInvited: invitedUsers
+        previouslyInvited: invitedUsers,
+        maxPerGroup: data.maxPerGroup,
+        delayRange: data.delayRange,
+        maxMessages: data.maxMessages
       });
 
       result.participants.forEach(participant => {
@@ -206,7 +219,7 @@ export default function Home() {
       // Start background invite process
       await telegramService.startBackgroundInvite({
         sessionId,
-        delaySeconds: data.delaySeconds
+        delayRange: data.delayRange
       });
 
       setStatus({ 
@@ -215,7 +228,7 @@ export default function Home() {
       });
     } catch (error) {
       setStatus({ 
-        message: error instanceof Error ? error.message : 'An error occurred', 
+        message: (error as Error).message, 
         type: 'error' 
       });
     } finally {
