@@ -39,3 +39,17 @@ or run in background
 ```sh
 gunicorn --bind 0.0.0.0:5328 wsgi:app &
 ```
+
+6. Killing process
+
+Check the port
+
+```sh
+lsof -i:5328
+```
+
+Kill my process id
+
+```sh
+kill -9 xxxx
+```
