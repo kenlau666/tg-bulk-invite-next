@@ -354,6 +354,7 @@ async def start_background_invite():
     data = request.json
     session_id = data.get('sessionId')
     delay_range = data.get('delayRange', {'min': 60, 'max': 60})
+    participants = data.get('participants')
 
     if session_id not in active_clients:
         return jsonify({
@@ -364,7 +365,6 @@ async def start_background_invite():
     client = active_clients[session_id]['client']
     target_entity = active_clients[session_id]['target_entity']
     is_channel = active_clients[session_id]['is_channel']
-    participants = active_clients[session_id].get('eligible_participants', [])
 
     if not participants:
         return jsonify({
