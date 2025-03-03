@@ -217,7 +217,7 @@ export default function Home() {
       });
       
       // Start background invite process
-      await telegramService.startBackgroundInvite({
+      telegramService.startBackgroundInvite({
         sessionId,
         delayRange: data.delayRange,
         participants: result.participants

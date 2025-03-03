@@ -87,6 +87,7 @@ export class TelegramService {
   async startBackgroundInvite(data: {
     sessionId: string;
     delayRange: DelayRange;
+    participants: Participant[];
   }) {
     try {
       const response = await axios.post('/api/startBackgroundInvite', data);

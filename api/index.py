@@ -12,6 +12,8 @@ import sys
 from threading import Thread
 import time
 from telethon.errors import ChatAdminRequiredError
+from threading import Thread
+
 
 app = Flask(__name__)
 
@@ -355,6 +357,58 @@ async def invite_participant():
             'message': str(e)
         }), 500
 
+def run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel):
+    async def _invite_participants():
+        for participant in participants:
+            try:
+                # Add to contacts
+                await client(AddContactRequest(
+                    id=participant['id'],
+                    first_name=participant['firstName'] or '',
+                    last_name=participant['lastName'] or '',
+                    phone=participant['phone'] or '',
+                    add_phone_privacy_exception=False
+                ))
+
+                # Invite to group with retry mechanism
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        if is_channel:
+                            await client(InviteToChannelRequest(
+                                channel=target_entity,
+                                users=[participant['id']]
+                            ))
+                        else:
+                            await client(AddChatUserRequest(
+                                chat_id=target_entity.chat_id,
+                                user_id=participant['id'],
+                                fwd_limit=300
+                            ))
+                        break  # If successful, break retry loop
+                    except Exception as e:
+                        if attempt == max_retries - 1:  # Last attempt
+                            raise e
+                        await asyncio.sleep(30)  # Wait 30 seconds before retry
+
+                # Random delay between invites
+                delay_seconds = random.randint(delay_range['min'], delay_range['max'])
+                await asyncio.sleep(delay_seconds)
+
+            except Exception as e:
+                print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                await asyncio.sleep(60)  # Wait a minute before next participant on error
+                continue
+
+    try:
+        loop.run_until_complete(_invite_participants())
+    except Exception as e:
+        print(f"Background task error: {str(e)}", file=sys.stderr)
+    finally:
+        loop.close()
+        if session_id in background_tasks:
+            del background_tasks[session_id]
+            
 @app.route('/api/startBackgroundInvite', methods=['POST'])
 @async_route
 async def start_background_invite():
@@ -376,49 +430,33 @@ async def start_background_invite():
     if not participants:
         return jsonify({
             'success': False,
-            'message': 'No participants to invite. Please get participants first.'
+            'message': 'No participants to invite'
         }), 400
 
     try:
-        for participant in participants:
-            try:
-                # Add to contacts
-                await client(AddContactRequest(
-                    id=participant['id'],
-                    first_name=participant['firstName'] or '',
-                    last_name=participant['lastName'] or '',
-                    phone=participant['phone'] or '',
-                    add_phone_privacy_exception=False
-                ))
+        # Cancel existing background task if any
+        if session_id in background_tasks:
+            background_tasks[session_id].join(timeout=1)
+            del background_tasks[session_id]
 
-                # Invite to group
-                if is_channel:
-                    await client(InviteToChannelRequest(
-                        channel=target_entity,
-                        users=[participant['id']]
-                    ))
-                else:
-                    await client(AddChatUserRequest(
-                        chat_id=target_entity.chat_id,
-                        user_id=participant['id'],
-                        fwd_limit=300
-                    ))
-
-                # Wait for the specified delay before next invite
-                delay_seconds = random.randint(delay_range['min'], delay_range['max'])
-                await asyncio.sleep(delay_seconds)
-
-            except Exception as e:
-                print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
-                continue
+        # Start new background thread
+        thread = Thread(
+            target=run_background_invite,
+            args=(session_id, participants, delay_range, client, target_entity, is_channel)
+        )
+        thread.daemon = True  # Make thread daemon so it won't prevent server shutdown
+        thread.start()
+        
+        # Store the thread
+        background_tasks[session_id] = thread
 
         return jsonify({
             'success': True,
-            'message': 'Background invite process completed'
+            'message': f'Background invite process started for {len(participants)} participants'
         })
 
     except Exception as e:
-        print(f"Error in background invite process: {str(e)}", file=sys.stderr)
+        print(f"Error starting background invite: {str(e)}", file=sys.stderr)
         return jsonify({
             'success': False,
             'message': str(e)
