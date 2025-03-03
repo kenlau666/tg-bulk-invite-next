@@ -12,8 +12,6 @@ import sys
 from threading import Thread
 import time
 from telethon.errors import ChatAdminRequiredError
-from threading import Thread
-
 
 app = Flask(__name__)
 
@@ -361,17 +359,24 @@ def run_background_invite(session_id, participants, delay_range, client, target_
     async def _invite_participants():
         for participant in participants:
             try:
-                # Add to contacts
-                await client(AddContactRequest(
-                    id=participant['id'],
-                    first_name=participant['firstName'] or '',
-                    last_name=participant['lastName'] or '',
-                    phone=participant['phone'] or '',
-                    add_phone_privacy_exception=False
-                ))
+                # Add to contacts with retry mechanism
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        await client(AddContactRequest(
+                            id=participant['id'],
+                            first_name=participant['firstName'] or '',
+                            last_name=participant['lastName'] or '',
+                            phone=participant['phone'] or '',
+                            add_phone_privacy_exception=False
+                        ))
+                        break
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            print(f"Failed to add contact {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                        await asyncio.sleep(3)
 
                 # Invite to group with retry mechanism
-                max_retries = 3
                 for attempt in range(max_retries):
                     try:
                         if is_channel:
@@ -385,30 +390,33 @@ def run_background_invite(session_id, participants, delay_range, client, target_
                                 user_id=participant['id'],
                                 fwd_limit=300
                             ))
-                        break  # If successful, break retry loop
+                        print(f"Successfully invited {participant['firstName'] or 'User'}", file=sys.stderr)
+                        break
                     except Exception as e:
-                        if attempt == max_retries - 1:  # Last attempt
-                            raise e
-                        await asyncio.sleep(30)  # Wait 30 seconds before retry
+                        if attempt == max_retries - 1:
+                            print(f"Failed to invite {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                            await asyncio.sleep(3)  # Longer wait on final failure
+                        else:
+                            await asyncio.sleep(1)  # Wait between retries
 
                 # Random delay between invites
                 delay_seconds = random.randint(delay_range['min'], delay_range['max'])
                 await asyncio.sleep(delay_seconds)
 
             except Exception as e:
-                print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
-                await asyncio.sleep(60)  # Wait a minute before next participant on error
+                print(f"Error processing {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
                 continue
 
     try:
-        loop.run_until_complete(_invite_participants())
+        # Use the existing event loop to run the coroutine
+        future = asyncio.run_coroutine_threadsafe(_invite_participants(), loop)
+        future.result()  # Wait for the coroutine to complete
     except Exception as e:
         print(f"Background task error: {str(e)}", file=sys.stderr)
     finally:
-        loop.close()
         if session_id in background_tasks:
             del background_tasks[session_id]
-            
+
 @app.route('/api/startBackgroundInvite', methods=['POST'])
 @async_route
 async def start_background_invite():
@@ -436,7 +444,10 @@ async def start_background_invite():
     try:
         # Cancel existing background task if any
         if session_id in background_tasks:
-            background_tasks[session_id].join(timeout=1)
+            try:
+                background_tasks[session_id].join(timeout=1)
+            except TimeoutError:
+                pass  # Ignore if thread doesn't stop immediately
             del background_tasks[session_id]
 
         # Start new background thread
