@@ -213,14 +213,12 @@ async def get_participants():
                         # Combine participants from both methods
                         participants.extend(message_participants)
 
-                    # Apply max per group limit if set
-                    if max_per_group > 0:
-                        participants = participants[:max_per_group]
-
+                    # First check eligibility for all participants
+                    group_eligible_participants = []
                     for participant in participants:
                         if (participant.id not in target_member_ids and 
                             participant.id not in previously_invited_to_target):
-                            eligible_participants.append({
+                            group_eligible_participants.append({
                                 'id': participant.id,
                                 'firstName': participant.first_name,
                                 'lastName': participant.last_name,
@@ -228,6 +226,13 @@ async def get_participants():
                                 'phone': participant.phone,
                                 'status': 'pending'
                             })
+
+                    # Then apply max per group limit if set
+                    if max_per_group > 0:
+                        group_eligible_participants = group_eligible_participants[:max_per_group]
+
+                    # Add to overall eligible participants
+                    eligible_participants.extend(group_eligible_participants)
 
                 except ChatAdminRequiredError:
                     print(f"Admin rights required to get full participant list for {group_link}", file=sys.stderr)
@@ -240,23 +245,18 @@ async def get_participants():
                         if message.sender_id and message.sender_id not in seen_senders:
                             try:
                                 sender = await client.get_entity(message.sender_id)
-                                message_participants.append(sender)
+                                participants.append(sender)
                                 seen_senders.add(message.sender_id)
                             except Exception as e:
                                 print(f"Error getting sender info: {str(e)}", file=sys.stderr)
                                 continue
-                    
-                    # Combine participants from both methods
-                    participants.extend(message_participants)
 
-                    # Apply max per group limit if set
-                    if max_per_group > 0:
-                        participants = participants[:max_per_group]
-
+                    # First check eligibility for all participants
+                    group_eligible_participants = []
                     for participant in participants:
                         if (participant.id not in target_member_ids and 
                             participant.id not in previously_invited_to_target):
-                            eligible_participants.append({
+                            group_eligible_participants.append({
                                 'id': participant.id,
                                 'firstName': participant.first_name,
                                 'lastName': participant.last_name,
@@ -264,6 +264,13 @@ async def get_participants():
                                 'phone': participant.phone,
                                 'status': 'pending'
                             })
+
+                    # Then apply max per group limit if set
+                    if max_per_group > 0:
+                        group_eligible_participants = group_eligible_participants[:max_per_group]
+
+                    # Add to overall eligible participants
+                    eligible_participants.extend(group_eligible_participants)
 
             except Exception as e:
                 print(f"Error getting participants from {group_link}: {str(e)}", file=sys.stderr)
