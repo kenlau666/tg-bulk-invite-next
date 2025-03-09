@@ -87,12 +87,29 @@ export class TelegramService {
   async startBackgroundInvite(data: {
     sessionId: string;
     delayRange: DelayRange;
+    participants: Participant[];
   }) {
     try {
       const response = await axios.post('/api/startBackgroundInvite', data);
       return response.data;
     } catch (error: any) {
       console.error('Error starting background invite:', error);
+      throw error.response ? error.response.data : error;
+    }
+  }
+
+  async inviteByPhoneNumbers(data: {
+    sessionId: string;
+    phoneNumbers: string[];
+    targetGroup: string;
+    delayRange: DelayRange;
+    interactive?: boolean;
+  }) {
+    try {
+      const response = await axios.post('/api/inviteByPhoneNumbers', data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error inviting by phone numbers:', error);
       throw error.response ? error.response.data : error;
     }
   }

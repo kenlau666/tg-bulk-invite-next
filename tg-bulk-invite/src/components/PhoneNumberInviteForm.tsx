@@ -1,72 +1,57 @@
 import { useState } from 'react';
 
-interface GroupSelectionFormProps {
+interface PhoneNumberInviteFormProps {
   onSubmit: (data: {
-    sourceGroups: string[];
+    phoneNumbers: string[];
     targetGroup: string;
     delayRange: {
       min: number;
       max: number;
     };
-    maxPerGroup: number;
-    maxMessages: number;
-    onlyRecentlyActive: boolean;
   }) => void;
-  onBackgroundSubmit: (data: {
-    sourceGroups: string[];
+  onInteractiveSubmit: (data: {
+    phoneNumbers: string[];
     targetGroup: string;
     delayRange: {
       min: number;
       max: number;
     };
-    maxPerGroup: number;
-    maxMessages: number;
-    onlyRecentlyActive: boolean;
   }) => void;
   disabled?: boolean;
 }
 
-export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disabled }: GroupSelectionFormProps) {
-  const [sourceGroups, setSourceGroups] = useState<string>('');
+export default function PhoneNumberInviteForm({ onSubmit, onInteractiveSubmit, disabled }: PhoneNumberInviteFormProps) {
+  const [phoneNumbers, setPhoneNumbers] = useState<string>('');
   const [targetGroup, setTargetGroup] = useState<string>('');
-  const [maxPerGroup, setMaxPerGroup] = useState<number>(0); // 0 means no limit
   const [delayRange, setDelayRange] = useState({
     min: 60,
     max: 60
   });
-  const [maxMessages, setMaxMessages] = useState<number>(3000);
-  const [onlyRecentlyActive, setOnlyRecentlyActive] = useState<boolean>(true);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const sourceGroupList = sourceGroups
-      .split('\n')
-      .map(link => link.trim())
-      .filter(link => link.length > 0);
+    const phoneNumberList = phoneNumbers
+      .split(',')
+      .map(phone => phone.trim())
+      .filter(phone => phone.length > 0);
 
     onSubmit({
-      sourceGroups: sourceGroupList,
+      phoneNumbers: phoneNumberList,
       targetGroup: targetGroup.trim(),
-      delayRange,
-      maxPerGroup,
-      maxMessages,
-      onlyRecentlyActive
+      delayRange
     });
   };
 
-  const handleBackgroundSubmit = () => {
-    const sourceGroupList = sourceGroups
-      .split('\n')
-      .map(link => link.trim())
-      .filter(link => link.length > 0);
+  const handleInteractiveSubmit = () => {
+    const phoneNumberList = phoneNumbers
+      .split(',')
+      .map(phone => phone.trim())
+      .filter(phone => phone.length > 0);
 
-    onBackgroundSubmit({
-      sourceGroups: sourceGroupList,
+    onInteractiveSubmit({
+      phoneNumbers: phoneNumberList,
       targetGroup: targetGroup.trim(),
-      delayRange,
-      maxPerGroup,
-      maxMessages,
-      onlyRecentlyActive
+      delayRange
     });
   };
 
@@ -74,18 +59,21 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
     <div className="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label htmlFor="sourceGroups" className="block text-sm font-medium text-gray-700">
-            Source Groups (one link per line)
+          <label htmlFor="phoneNumbers" className="block text-sm font-medium text-gray-700">
+            Phone Numbers (comma separated)
           </label>
           <textarea
-            id="sourceGroups"
-            value={sourceGroups}
-            onChange={(e) => setSourceGroups(e.target.value)}
+            id="phoneNumbers"
+            value={phoneNumbers}
+            onChange={(e) => setPhoneNumbers(e.target.value)}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
-            placeholder="https://t.me/group1                                           https://t.me/group2"
+            placeholder="+1234567890, +9876543210"
             rows={5}
             required
           />
+          <p className="mt-1 text-sm text-gray-500">
+            Enter phone numbers with country code (e.g., +1234567890)
+          </p>
         </div>
 
         <div>
@@ -100,20 +88,6 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
             placeholder="https://t.me/targetgroup"
             required
-          />
-        </div>
-
-        <div>
-          <label htmlFor="maxPerGroup" className="block text-sm font-medium text-gray-700">
-            Max Members per Source Group (0 for no limit)
-          </label>
-          <input
-            type="number"
-            id="maxPerGroup"
-            value={maxPerGroup}
-            onChange={(e) => setMaxPerGroup(Math.max(0, parseInt(e.target.value) || 0))}
-            min="0"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
           />
         </div>
 
@@ -158,43 +132,11 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
           </p>
         </div>
 
-        <div>
-          <label htmlFor="maxMessages" className="block text-sm font-medium text-gray-700">
-            Max Messages to Scan
-          </label>
-          <input
-            type="number"
-            id="maxMessages"
-            value={maxMessages}
-            onChange={(e) => setMaxMessages(Math.max(1, parseInt(e.target.value) || 1))}
-            min="1"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-medium text-gray-700"
-          />
-          <p className="mt-1 text-sm text-gray-500">
-            Higher values will find more members but take longer to process
-          </p>
-        </div>
-
-        <div className="flex items-center">
-          <input
-            id="onlyRecentlyActive"
-            type="checkbox"
-            checked={onlyRecentlyActive}
-            onChange={(e) => setOnlyRecentlyActive(e.target.checked)}
-            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-          />
-          <label htmlFor="onlyRecentlyActive" className="ml-2 block text-sm text-gray-900">
-            Only invite recently active users
-          </label>
-          <p className="ml-2 text-sm text-gray-500">
-            (Users active within the last 7 days)
-          </p>
-        </div>
-
         <div className="grid grid-cols-2 gap-4">
           <button
-            type="submit"
+            type="button"
             disabled={disabled}
+            onClick={handleInteractiveSubmit}
             className={`flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
               disabled 
                 ? 'bg-gray-400 cursor-not-allowed'
@@ -205,9 +147,8 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
           </button>
 
           <button
-            type="button"
+            type="submit"
             disabled={disabled}
-            onClick={handleBackgroundSubmit}
             className={`flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
               disabled 
                 ? 'bg-gray-400 cursor-not-allowed'

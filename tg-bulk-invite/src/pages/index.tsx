@@ -6,11 +6,13 @@ import { telegramService } from "@/services/telegramService";
 import GroupSelectionForm from "@/components/GroupSelectionForm";
 import InviteProgress from "@/components/InviteProgress";
 import { useInvitedUsers } from '@/hooks/useInvitedUsers';
+import PhoneNumberInviteForm from "@/components/PhoneNumberInviteForm";
 
 interface Participant {
   id: number;
   firstName: string | null;
   status: 'invited' | 'skipped' | 'pending' | 'failed';
+  phone: string | null;
 }
 
 interface Stats {
@@ -40,6 +42,7 @@ export default function Home() {
   const { invitedUsers, addInvitedUser, isUserInvited } = useInvitedUsers(currentTargetGroup);
   const [shouldStop, setShouldStop] = useState(false);
   const stopRef = useRef(false);
+  const [activeForm, setActiveForm] = useState<'group' | 'phone'>('group');
 
   const handleFormSubmit = async (formData: {
     apiId: string;
@@ -217,9 +220,10 @@ export default function Home() {
       });
       
       // Start background invite process
-      await telegramService.startBackgroundInvite({
+      telegramService.startBackgroundInvite({
         sessionId,
-        delayRange: data.delayRange
+        delayRange: data.delayRange,
+        participants: result.participants
       });
 
       setStatus({ 
@@ -240,6 +244,151 @@ export default function Home() {
     stopRef.current = true;
     setShouldStop(true);
     setStatus({ message: 'Stopping process...', type: 'info' });
+  };
+
+  const handlePhoneNumberInvite = async (data: {
+    phoneNumbers: string[];
+    targetGroup: string;
+    delayRange: { min: number; max: number };
+  }) => {
+    try {
+      setIsProcessing(true);
+      setCurrentTargetGroup(data.targetGroup);
+      setStatus({ message: 'Processing phone numbers...', type: 'info' });
+      
+      const result = await telegramService.inviteByPhoneNumbers({
+        sessionId,
+        phoneNumbers: data.phoneNumbers,
+        targetGroup: data.targetGroup,
+        delayRange: data.delayRange
+      });
+
+      setStatus({ 
+        message: result.message, 
+        type: 'success' 
+      });
+    } catch (error) {
+      setStatus({ 
+        message: (error as Error).message, 
+        type: 'error' 
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleInteractivePhoneNumberInvite = async (data: {
+    phoneNumbers: string[];
+    targetGroup: string;
+    delayRange: { min: number; max: number };
+  }) => {
+    try {
+      setIsProcessing(true);
+      stopRef.current = false;
+      setCurrentTargetGroup(data.targetGroup);
+      setStatus({ message: 'Processing phone numbers...', type: 'info' });
+      
+      // First, get the participants from phone numbers
+      const result = await telegramService.inviteByPhoneNumbers({
+        sessionId,
+        phoneNumbers: data.phoneNumbers,
+        targetGroup: data.targetGroup,
+        delayRange: data.delayRange,
+        interactive: true // Add this flag to indicate we want participants returned
+      });
+
+      // Set the participants for display
+      setParticipants(result.participants.map((p: Participant) => ({ 
+        ...p,
+        status: 'pending',
+        firstName: p.firstName || '',
+        id: p.id || 0
+      })));
+      setStats({ total: result.participants.length, invited: 0, skipped: 0 });
+
+      // Then, invite them one by one with delay
+      for (const participant of result.participants) {
+        if (stopRef.current) {
+          setStatus({ message: 'Process stopped by user', type: 'info' });
+          break;
+        }
+
+        // Skip participants without IDs (couldn't be resolved from phone numbers)
+        if (!participant.id) {
+          setParticipants(prev => prev.map(p => 
+            p.phone === participant.phone ? { ...p, status: 'skipped' } : p
+          ));
+          setStats(prev => ({ ...prev, skipped: prev.skipped + 1 }));
+          continue;
+        }
+
+        try {
+          await telegramService.inviteParticipant({
+            sessionId,
+            participant
+          });
+
+          // Update participant status and stats
+          setParticipants(prev => prev.map(p => 
+            p.id === participant.id ? { ...p, status: 'invited' } : p
+          ));
+          setStats(prev => ({ ...prev, invited: prev.invited + 1 }));
+          if (participant.id) {
+            addInvitedUser({ id: participant.id }, data.targetGroup);
+          }
+
+          if (stopRef.current) break;
+
+          // Wait for a random delay within the range
+          const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
+          await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(resolve, delayMs);
+            
+            if (stopRef.current) {
+              clearTimeout(timeoutId);
+              reject(new Error('Stopped by user'));
+            }
+          });
+
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Stopped by user') {
+            break;
+          }
+          console.error('Failed to invite participant:', error);
+          setParticipants(prev => prev.map(p => 
+            p.id === participant.id ? { ...p, status: 'failed' } : p
+          ));
+          setStats(prev => ({ ...prev, skipped: prev.skipped + 1 }));
+          if (participant.id) {
+            addInvitedUser({ id: participant.id }, data.targetGroup);
+          }
+
+          // Wait for a random delay before next attempt
+          const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
+          await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(resolve, delayMs);
+            
+            if (stopRef.current) {
+              clearTimeout(timeoutId);
+              reject(new Error('Stopped by user'));
+            }
+          });
+        }
+      }
+
+      if (!stopRef.current) {
+        setStatus({ message: 'Process completed', type: 'success' });
+      }
+    } catch (error) {
+      setStatus({ 
+        message: (error as Error).message, 
+        type: 'error' 
+      });
+    } finally {
+      setIsProcessing(false);
+      stopRef.current = false;
+      setShouldStop(false);
+    }
   };
 
   return (
@@ -271,11 +420,61 @@ export default function Home() {
               )
             ) : (
               <>
-                <GroupSelectionForm 
-                  onSubmit={handleGroupSelection} 
-                  onBackgroundSubmit={handleBackgroundInvite}
-                  disabled={isProcessing}
-                />
+                <div className="mb-6">
+                  <div className="sm:hidden">
+                    <select
+                      id="tabs"
+                      name="tabs"
+                      className="block w-full rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                      value={activeForm}
+                      onChange={(e) => setActiveForm(e.target.value as 'group' | 'phone')}
+                    >
+                      <option value="group">Invite from Groups</option>
+                      <option value="phone">Invite by Phone Numbers</option>
+                    </select>
+                  </div>
+                  <div className="hidden sm:block">
+                    <div className="border-b border-gray-200">
+                      <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                        <button
+                          onClick={() => setActiveForm('group')}
+                          className={`${
+                            activeForm === 'group'
+                              ? 'border-indigo-500 text-indigo-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                          Invite from Groups
+                        </button>
+                        <button
+                          onClick={() => setActiveForm('phone')}
+                          className={`${
+                            activeForm === 'phone'
+                              ? 'border-indigo-500 text-indigo-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                          Invite by Phone Numbers
+                        </button>
+                      </nav>
+                    </div>
+                  </div>
+                </div>
+
+                {activeForm === 'group' ? (
+                  <GroupSelectionForm 
+                    onSubmit={handleGroupSelection} 
+                    onBackgroundSubmit={handleBackgroundInvite}
+                    disabled={isProcessing}
+                  />
+                ) : (
+                  <PhoneNumberInviteForm
+                    onSubmit={handlePhoneNumberInvite}
+                    onInteractiveSubmit={handleInteractivePhoneNumberInvite}
+                    disabled={isProcessing}
+                  />
+                )}
+                
                 {isProcessing && (
                   <div className="mt-4 flex flex-col items-center space-y-4">
                     <div className="text-center text-sm text-gray-500">
