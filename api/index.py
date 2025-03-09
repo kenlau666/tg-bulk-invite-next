@@ -545,9 +545,7 @@ def run_background_invite(session_id, participants, delay_range, client, target_
     async def _invite_participants():
         try:
             for participant in participants:
-                try:
-                    print(participant,file=sys.stderr)
-                    # For phone-only participants, try to import contact first
+                try:                    # For phone-only participants, try to import contact first
                     if participant.get('id') is None and participant.get('phone'):
                         try:
                             # Import contact
