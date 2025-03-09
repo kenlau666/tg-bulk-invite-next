@@ -10,6 +10,7 @@ interface GroupSelectionFormProps {
     };
     maxPerGroup: number;
     maxMessages: number;
+    onlyRecentlyActive: boolean;
   }) => void;
   onBackgroundSubmit: (data: {
     sourceGroups: string[];
@@ -20,6 +21,7 @@ interface GroupSelectionFormProps {
     };
     maxPerGroup: number;
     maxMessages: number;
+    onlyRecentlyActive: boolean;
   }) => void;
   disabled?: boolean;
 }
@@ -33,6 +35,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
     max: 60
   });
   const [maxMessages, setMaxMessages] = useState<number>(3000);
+  const [onlyRecentlyActive, setOnlyRecentlyActive] = useState<boolean>(true);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +49,8 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
       targetGroup: targetGroup.trim(),
       delayRange,
       maxPerGroup,
-      maxMessages
+      maxMessages,
+      onlyRecentlyActive
     });
   };
 
@@ -61,7 +65,8 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
       targetGroup: targetGroup.trim(),
       delayRange,
       maxPerGroup,
-      maxMessages
+      maxMessages,
+      onlyRecentlyActive
     });
   };
 
@@ -167,6 +172,22 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
           />
           <p className="mt-1 text-sm text-gray-500">
             Higher values will find more members but take longer to process
+          </p>
+        </div>
+
+        <div className="flex items-center">
+          <input
+            id="onlyRecentlyActive"
+            type="checkbox"
+            checked={onlyRecentlyActive}
+            onChange={(e) => setOnlyRecentlyActive(e.target.checked)}
+            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+          />
+          <label htmlFor="onlyRecentlyActive" className="ml-2 block text-sm text-gray-900">
+            Only invite recently active users
+          </label>
+          <p className="ml-2 text-sm text-gray-500">
+            (Users active within the last 7 days)
           </p>
         </div>
 

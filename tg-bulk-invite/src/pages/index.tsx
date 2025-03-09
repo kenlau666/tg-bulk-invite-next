@@ -6,6 +6,7 @@ import { telegramService } from "@/services/telegramService";
 import GroupSelectionForm from "@/components/GroupSelectionForm";
 import InviteProgress from "@/components/InviteProgress";
 import { useInvitedUsers } from '@/hooks/useInvitedUsers';
+import PhoneNumberInviteForm from "@/components/PhoneNumberInviteForm";
 
 interface Participant {
   id: number;
@@ -40,6 +41,7 @@ export default function Home() {
   const { invitedUsers, addInvitedUser, isUserInvited } = useInvitedUsers(currentTargetGroup);
   const [shouldStop, setShouldStop] = useState(false);
   const stopRef = useRef(false);
+  const [activeForm, setActiveForm] = useState<'group' | 'phone'>('group');
 
   const handleFormSubmit = async (formData: {
     apiId: string;
@@ -243,6 +245,37 @@ export default function Home() {
     setStatus({ message: 'Stopping process...', type: 'info' });
   };
 
+  const handlePhoneNumberInvite = async (data: {
+    phoneNumbers: string[];
+    targetGroup: string;
+    delayRange: { min: number; max: number };
+  }) => {
+    try {
+      setIsProcessing(true);
+      setCurrentTargetGroup(data.targetGroup);
+      setStatus({ message: 'Processing phone numbers...', type: 'info' });
+      
+      const result = await telegramService.inviteByPhoneNumbers({
+        sessionId,
+        phoneNumbers: data.phoneNumbers,
+        targetGroup: data.targetGroup,
+        delayRange: data.delayRange
+      });
+
+      setStatus({ 
+        message: result.message, 
+        type: 'success' 
+      });
+    } catch (error) {
+      setStatus({ 
+        message: (error as Error).message, 
+        type: 'error' 
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <>
       <Head>
@@ -272,11 +305,60 @@ export default function Home() {
               )
             ) : (
               <>
-                <GroupSelectionForm 
-                  onSubmit={handleGroupSelection} 
-                  onBackgroundSubmit={handleBackgroundInvite}
-                  disabled={isProcessing}
-                />
+                <div className="mb-6">
+                  <div className="sm:hidden">
+                    <select
+                      id="tabs"
+                      name="tabs"
+                      className="block w-full rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                      value={activeForm}
+                      onChange={(e) => setActiveForm(e.target.value as 'group' | 'phone')}
+                    >
+                      <option value="group">Invite from Groups</option>
+                      <option value="phone">Invite by Phone Numbers</option>
+                    </select>
+                  </div>
+                  <div className="hidden sm:block">
+                    <div className="border-b border-gray-200">
+                      <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                        <button
+                          onClick={() => setActiveForm('group')}
+                          className={`${
+                            activeForm === 'group'
+                              ? 'border-indigo-500 text-indigo-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                          Invite from Groups
+                        </button>
+                        <button
+                          onClick={() => setActiveForm('phone')}
+                          className={`${
+                            activeForm === 'phone'
+                              ? 'border-indigo-500 text-indigo-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                          Invite by Phone Numbers
+                        </button>
+                      </nav>
+                    </div>
+                  </div>
+                </div>
+
+                {activeForm === 'group' ? (
+                  <GroupSelectionForm 
+                    onSubmit={handleGroupSelection} 
+                    onBackgroundSubmit={handleBackgroundInvite}
+                    disabled={isProcessing}
+                  />
+                ) : (
+                  <PhoneNumberInviteForm
+                    onSubmit={handlePhoneNumberInvite}
+                    disabled={isProcessing}
+                  />
+                )}
+                
                 {isProcessing && (
                   <div className="mt-4 flex flex-col items-center space-y-4">
                     <div className="text-center text-sm text-gray-500">

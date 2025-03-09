@@ -150,9 +150,8 @@ async def get_participants():
     previously_invited = data.get('previouslyInvited', [])
     max_per_group = data.get('maxPerGroup', 0)
     delay_range = data.get('delayRange', {'min': 60, 'max': 60})
-    
-    # Ensure maxMessages is at least 1, default to 3000
     max_messages = max(1, data.get('maxMessages', 3000))
+    only_recently_active = data.get('onlyRecentlyActive', True)
 
     try:
         if session_id not in active_clients:
@@ -216,15 +215,53 @@ async def get_participants():
                     # First check eligibility for all participants
                     group_eligible_participants = []
                     for participant in participants:
+                        # Check if user was recently active
+                        is_recently_active = True
+                        if only_recently_active:
+                            try:
+                                # Get user's status
+                                user_status = participant.status
+                                # Check if user was online recently (within last 7 days)
+                                import datetime
+                                now = datetime.datetime.now(datetime.timezone.utc)
+                                if hasattr(user_status, 'was_online'):
+                                    # Calculate days since last online
+                                    days_since_online = (now - user_status.was_online).days
+                                    is_recently_active = days_since_online <= 7
+                                elif hasattr(user_status, 'expires'):
+                                    # User is online or was recently
+                                    is_recently_active = True
+                                else:
+                                    # Unknown status, default to include
+                                    is_recently_active = True
+                            except Exception as e:
+                                print(f"Error checking user status: {str(e)}", file=sys.stderr)
+                                is_recently_active = True  # Include by default if error
+
                         if (participant.id not in target_member_ids and 
-                            participant.id not in previously_invited_to_target):
+                            participant.id not in previously_invited_to_target and
+                            (not only_recently_active or is_recently_active)):
+                            
+                            # Add status info to the participant data
+                            status_text = "Unknown"
+                            try:
+                                if hasattr(participant.status, 'was_online'):
+                                    status_text = f"Last seen {(datetime.datetime.now(datetime.timezone.utc) - participant.status.was_online).days} days ago"
+                                elif hasattr(participant.status, 'expires'):
+                                    status_text = "Online recently"
+                                else:
+                                    status_text = str(participant.status)
+                            except:
+                                pass
+                                
                             group_eligible_participants.append({
                                 'id': participant.id,
                                 'firstName': participant.first_name,
                                 'lastName': participant.last_name,
                                 'username': participant.username,
                                 'phone': participant.phone,
-                                'status': 'pending'
+                                'status': 'pending',
+                                'lastSeen': status_text
                             })
 
                     # Then apply max per group limit if set
@@ -254,15 +291,53 @@ async def get_participants():
                     # First check eligibility for all participants
                     group_eligible_participants = []
                     for participant in participants:
+                        # Check if user was recently active
+                        is_recently_active = True
+                        if only_recently_active:
+                            try:
+                                # Get user's status
+                                user_status = participant.status
+                                # Check if user was online recently (within last 7 days)
+                                import datetime
+                                now = datetime.datetime.now(datetime.timezone.utc)
+                                if hasattr(user_status, 'was_online'):
+                                    # Calculate days since last online
+                                    days_since_online = (now - user_status.was_online).days
+                                    is_recently_active = days_since_online <= 7
+                                elif hasattr(user_status, 'expires'):
+                                    # User is online or was recently
+                                    is_recently_active = True
+                                else:
+                                    # Unknown status, default to include
+                                    is_recently_active = True
+                            except Exception as e:
+                                print(f"Error checking user status: {str(e)}", file=sys.stderr)
+                                is_recently_active = True  # Include by default if error
+
                         if (participant.id not in target_member_ids and 
-                            participant.id not in previously_invited_to_target):
+                            participant.id not in previously_invited_to_target and
+                            (not only_recently_active or is_recently_active)):
+                            
+                            # Add status info to the participant data
+                            status_text = "Unknown"
+                            try:
+                                if hasattr(participant.status, 'was_online'):
+                                    status_text = f"Last seen {(datetime.datetime.now(datetime.timezone.utc) - participant.status.was_online).days} days ago"
+                                elif hasattr(participant.status, 'expires'):
+                                    status_text = "Online recently"
+                                else:
+                                    status_text = str(participant.status)
+                            except:
+                                pass
+                                
                             group_eligible_participants.append({
                                 'id': participant.id,
                                 'firstName': participant.first_name,
                                 'lastName': participant.last_name,
                                 'username': participant.username,
                                 'phone': participant.phone,
-                                'status': 'pending'
+                                'status': 'pending',
+                                'lastSeen': status_text
                             })
 
                     # Then apply max per group limit if set
@@ -355,67 +430,208 @@ async def invite_participant():
             'message': str(e)
         }), 500
 
-def run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel):
-    async def _invite_participants():
-        for participant in participants:
+@app.route('/api/inviteByPhoneNumbers', methods=['POST'])
+@async_route
+async def invite_by_phone_numbers():
+    data = request.json
+    session_id = data.get('sessionId')
+    phone_numbers = data.get('phoneNumbers', [])
+    target_group = data.get('targetGroup')
+    delay_range = data.get('delayRange', {'min': 60, 'max': 60})
+
+    if session_id not in active_clients:
+        return jsonify({
+            'success': False,
+            'message': 'No active session found'
+        }), 400
+
+    client = active_clients[session_id]['client']
+    
+    try:
+        # Get target group info
+        target_entity = await client.get_input_entity(target_group)
+        is_channel = isinstance(target_entity, InputPeerChannel)
+        
+        # Store target entity in active_clients
+        active_clients[session_id]['target_entity'] = target_entity
+        active_clients[session_id]['is_channel'] = is_channel
+        active_clients[session_id]['delay_range'] = delay_range
+
+        # Process phone numbers
+        participants = []
+        for phone in phone_numbers:
             try:
-                # Add to contacts with retry mechanism
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        await client(AddContactRequest(
-                            id=participant['id'],
-                            first_name=participant['firstName'] or '',
-                            last_name=participant['lastName'] or '',
-                            phone=participant['phone'] or '',
-                            add_phone_privacy_exception=False
-                        ))
-                        break
-                    except Exception as e:
-                        if attempt == max_retries - 1:
-                            print(f"Failed to add contact {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
-                        await asyncio.sleep(3)
-
-                # Invite to group with retry mechanism
-                for attempt in range(max_retries):
-                    try:
-                        if is_channel:
-                            await client(InviteToChannelRequest(
-                                channel=target_entity,
-                                users=[participant['id']]
-                            ))
-                        else:
-                            await client(AddChatUserRequest(
-                                chat_id=target_entity.chat_id,
-                                user_id=participant['id'],
-                                fwd_limit=300
-                            ))
-                        print(f"Successfully invited {participant['firstName'] or 'User'}", file=sys.stderr)
-                        break
-                    except Exception as e:
-                        if attempt == max_retries - 1:
-                            print(f"Failed to invite {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
-                            await asyncio.sleep(3)  # Longer wait on final failure
-                        else:
-                            await asyncio.sleep(1)  # Wait between retries
-
-                # Random delay between invites
-                delay_seconds = random.randint(delay_range['min'], delay_range['max'])
-                await asyncio.sleep(delay_seconds)
-
+                # Clean the phone number
+                phone = phone.strip()
+                if not phone:
+                    continue
+                    
+                # Try to get user by phone
+                try:
+                    from telethon.tl.functions.contacts import ImportContactsRequest
+                    from telethon.tl.types import InputPhoneContact
+                    
+                    result = await client(ImportContactsRequest([
+                        InputPhoneContact(
+                            client_id=0,
+                            phone=phone,
+                            first_name="User",
+                            last_name=""
+                        )
+                    ]))
+                    
+                    if result.users:
+                        user = result.users[0]
+                        participants.append({
+                            'id': user.id,
+                            'firstName': user.first_name,
+                            'lastName': user.last_name,
+                            'username': user.username,
+                            'phone': phone,
+                            'status': 'pending'
+                        })
+                    else:
+                        # Add with just the phone number for later processing
+                        participants.append({
+                            'id': None,
+                            'firstName': None,
+                            'lastName': None,
+                            'username': None,
+                            'phone': phone,
+                            'status': 'pending'
+                        })
+                except Exception as e:
+                    print(f"Error importing contact for phone {phone}: {str(e)}", file=sys.stderr)
+                    # Add with just the phone number
+                    participants.append({
+                        'id': None,
+                        'firstName': None,
+                        'lastName': None,
+                        'username': None,
+                        'phone': phone,
+                        'status': 'pending'
+                    })
             except Exception as e:
-                print(f"Error processing {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                print(f"Error processing phone number {phone}: {str(e)}", file=sys.stderr)
                 continue
 
-    try:
-        # Use the existing event loop to run the coroutine
-        future = asyncio.run_coroutine_threadsafe(_invite_participants(), loop)
-        future.result()  # Wait for the coroutine to complete
+        # Start background invite process for the phone numbers
+        if participants:
+            future = run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel)
+            background_tasks[session_id] = future
+
+        return jsonify({
+            'success': True,
+            'message': f'Started invite process for {len(participants)} phone numbers',
+            'participants': participants
+        })
+
     except Exception as e:
-        print(f"Background task error: {str(e)}", file=sys.stderr)
-    finally:
-        if session_id in background_tasks:
-            del background_tasks[session_id]
+        print(f"Error inviting by phone numbers: {str(e)}", file=sys.stderr)
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+def run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel):
+    async def _invite_participants():
+        try:
+            for participant in participants:
+                try:
+                    # For phone-only participants, try to import contact first
+                    if participant.get('id') is None and participant.get('phone'):
+                        try:
+                            # Import contact
+                            from telethon.tl.functions.contacts import ImportContactsRequest
+                            from telethon.tl.types import InputPhoneContact
+                            
+                            result = await client(ImportContactsRequest([
+                                InputPhoneContact(
+                                    client_id=0,
+                                    phone=participant['phone'],
+                                    first_name=participant.get('firstName') or 'User',
+                                    last_name=participant.get('lastName') or ''
+                                )
+                            ]))
+                            
+                            if result.users:
+                                # Update participant with user info
+                                user = result.users[0]
+                                participant['id'] = user.id
+                                participant['firstName'] = user.first_name
+                                participant['lastName'] = user.last_name
+                                participant['username'] = user.username
+                                print(f"Successfully imported contact: {participant['phone']}", file=sys.stderr)
+                            else:
+                                print(f"No user found for phone: {participant['phone']}", file=sys.stderr)
+                                continue
+                        except Exception as e:
+                            print(f"Error importing contact {participant['phone']}: {str(e)}", file=sys.stderr)
+                            continue
+
+                    # Skip if we still don't have an ID
+                    if participant.get('id') is None:
+                        print(f"Skipping participant with no ID: {participant.get('phone')}", file=sys.stderr)
+                        continue
+
+                    # Add to contacts with retry mechanism
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            await client(AddContactRequest(
+                                id=participant['id'],
+                                first_name=participant['firstName'] or '',
+                                last_name=participant['lastName'] or '',
+                                phone=participant['phone'] or '',
+                                add_phone_privacy_exception=False
+                            ))
+                            break
+                        except Exception as e:
+                            if attempt == max_retries - 1:
+                                print(f"Failed to add contact {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                            await asyncio.sleep(30)
+
+                    # Invite to group with retry mechanism
+                    for attempt in range(max_retries):
+                        try:
+                            if is_channel:
+                                await client(InviteToChannelRequest(
+                                    channel=target_entity,
+                                    users=[participant['id']]
+                                ))
+                            else:
+                                await client(AddChatUserRequest(
+                                    chat_id=target_entity.chat_id,
+                                    user_id=participant['id'],
+                                    fwd_limit=300
+                                ))
+                            print(f"Successfully invited {participant['firstName'] or 'User'}", file=sys.stderr)
+                            break
+                        except Exception as e:
+                            if attempt == max_retries - 1:
+                                print(f"Failed to invite {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                                await asyncio.sleep(60)  # Longer wait on final failure
+                            else:
+                                await asyncio.sleep(30)  # Wait between retries
+
+                    # Random delay between invites
+                    delay_seconds = random.randint(delay_range['min'], delay_range['max'])
+                    await asyncio.sleep(delay_seconds)
+
+                except Exception as e:
+                    print(f"Error processing {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                    await asyncio.sleep(60)
+                    continue
+        finally:
+            # Clean up when done
+            if session_id in background_tasks:
+                del background_tasks[session_id]
+                print(f"Background task for session {session_id} completed", file=sys.stderr)
+
+    # Schedule the coroutine to run in the existing event loop
+    # Store the future so we can check its status later
+    future = asyncio.run_coroutine_threadsafe(_invite_participants(), loop)
+    return future
 
 @app.route('/api/startBackgroundInvite', methods=['POST'])
 @async_route
@@ -445,21 +661,14 @@ async def start_background_invite():
         # Cancel existing background task if any
         if session_id in background_tasks:
             try:
-                background_tasks[session_id].join(timeout=1)
-            except TimeoutError:
-                pass  # Ignore if thread doesn't stop immediately
-            del background_tasks[session_id]
+                background_tasks[session_id].cancel()
+                print(f"Cancelled existing background task for session {session_id}", file=sys.stderr)
+            except Exception as e:
+                print(f"Error cancelling task: {str(e)}", file=sys.stderr)
 
-        # Start new background thread
-        thread = Thread(
-            target=run_background_invite,
-            args=(session_id, participants, delay_range, client, target_entity, is_channel)
-        )
-        thread.daemon = True  # Make thread daemon so it won't prevent server shutdown
-        thread.start()
-        
-        # Store the thread
-        background_tasks[session_id] = thread
+        # Start new background task and store the future
+        future = run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel)
+        background_tasks[session_id] = future
 
         return jsonify({
             'success': True,

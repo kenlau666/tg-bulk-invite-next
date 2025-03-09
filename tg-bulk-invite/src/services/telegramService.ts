@@ -97,6 +97,21 @@ export class TelegramService {
       throw error.response ? error.response.data : error;
     }
   }
+
+  async inviteByPhoneNumbers(data: {
+    sessionId: string;
+    phoneNumbers: string[];
+    targetGroup: string;
+    delayRange: DelayRange;
+  }) {
+    try {
+      const response = await axios.post('/api/inviteByPhoneNumbers', data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error inviting by phone numbers:', error);
+      throw error.response ? error.response.data : error;
+    }
+  }
 }
 
 export const telegramService = new TelegramService();
