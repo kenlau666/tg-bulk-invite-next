@@ -12,6 +12,7 @@ interface Participant {
   id: number;
   firstName: string | null;
   status: 'invited' | 'skipped' | 'pending' | 'failed';
+  phone: string | null;
 }
 
 interface Stats {
@@ -276,6 +277,120 @@ export default function Home() {
     }
   };
 
+  const handleInteractivePhoneNumberInvite = async (data: {
+    phoneNumbers: string[];
+    targetGroup: string;
+    delayRange: { min: number; max: number };
+  }) => {
+    try {
+      setIsProcessing(true);
+      stopRef.current = false;
+      setCurrentTargetGroup(data.targetGroup);
+      setStatus({ message: 'Processing phone numbers...', type: 'info' });
+      
+      // First, get the participants from phone numbers
+      const result = await telegramService.inviteByPhoneNumbers({
+        sessionId,
+        phoneNumbers: data.phoneNumbers,
+        targetGroup: data.targetGroup,
+        delayRange: data.delayRange,
+        interactive: true // Add this flag to indicate we want participants returned
+      });
+
+      // Set the participants for display
+      setParticipants(result.participants.map((p: Participant) => ({ 
+        ...p,
+        status: 'pending',
+        firstName: p.firstName || '',
+        id: p.id || 0
+      })));
+      setStats({ total: result.participants.length, invited: 0, skipped: 0 });
+
+      // Then, invite them one by one with delay
+      for (const participant of result.participants) {
+        if (stopRef.current) {
+          setStatus({ message: 'Process stopped by user', type: 'info' });
+          break;
+        }
+
+        // Skip participants without IDs (couldn't be resolved from phone numbers)
+        if (!participant.id) {
+          setParticipants(prev => prev.map(p => 
+            p.phone === participant.phone ? { ...p, status: 'skipped' } : p
+          ));
+          setStats(prev => ({ ...prev, skipped: prev.skipped + 1 }));
+          continue;
+        }
+
+        try {
+          await telegramService.inviteParticipant({
+            sessionId,
+            participant
+          });
+
+          // Update participant status and stats
+          setParticipants(prev => prev.map(p => 
+            p.id === participant.id ? { ...p, status: 'invited' } : p
+          ));
+          setStats(prev => ({ ...prev, invited: prev.invited + 1 }));
+          if (participant.id) {
+            addInvitedUser({ id: participant.id }, data.targetGroup);
+          }
+
+          if (stopRef.current) break;
+
+          // Wait for a random delay within the range
+          const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
+          await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(resolve, delayMs);
+            
+            if (stopRef.current) {
+              clearTimeout(timeoutId);
+              reject(new Error('Stopped by user'));
+            }
+          });
+
+        } catch (error) {
+          if (error instanceof Error && error.message === 'Stopped by user') {
+            break;
+          }
+          console.error('Failed to invite participant:', error);
+          setParticipants(prev => prev.map(p => 
+            p.id === participant.id ? { ...p, status: 'failed' } : p
+          ));
+          setStats(prev => ({ ...prev, skipped: prev.skipped + 1 }));
+          if (participant.id) {
+            addInvitedUser({ id: participant.id }, data.targetGroup);
+          }
+
+          // Wait for a random delay before next attempt
+          const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
+          await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(resolve, delayMs);
+            
+            if (stopRef.current) {
+              clearTimeout(timeoutId);
+              reject(new Error('Stopped by user'));
+            }
+          });
+        }
+      }
+
+      if (!stopRef.current) {
+        setStatus({ message: 'Process completed', type: 'success' });
+      }
+    } catch (error) {
+      setStatus({ 
+        message: (error as Error).message, 
+        type: 'error' 
+      });
+    } finally {
+      setIsProcessing(false);
+      stopRef.current = false;
+      setShouldStop(false);
+    }
+  };
+
   return (
     <>
       <Head>
@@ -355,6 +470,7 @@ export default function Home() {
                 ) : (
                   <PhoneNumberInviteForm
                     onSubmit={handlePhoneNumberInvite}
+                    onInteractiveSubmit={handleInteractivePhoneNumberInvite}
                     disabled={isProcessing}
                   />
                 )}

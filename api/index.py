@@ -438,6 +438,7 @@ async def invite_by_phone_numbers():
     phone_numbers = data.get('phoneNumbers', [])
     target_group = data.get('targetGroup')
     delay_range = data.get('delayRange', {'min': 60, 'max': 60})
+    interactive = data.get('interactive', False)  # New parameter for interactive mode
 
     if session_id not in active_clients:
         return jsonify({
@@ -479,7 +480,6 @@ async def invite_by_phone_numbers():
                             last_name=""
                         )
                     ]))
-                    
                     if result.users:
                         user = result.users[0]
                         participants.append({
@@ -515,7 +515,15 @@ async def invite_by_phone_numbers():
                 print(f"Error processing phone number {phone}: {str(e)}", file=sys.stderr)
                 continue
 
-        # Start background invite process for the phone numbers
+        # If interactive mode, just return the participants without starting background process
+        if interactive:
+            return jsonify({
+                'success': True,
+                'message': f'Processed {len(participants)} phone numbers',
+                'participants': participants
+            })
+        
+        # Otherwise start background invite process
         if participants:
             future = run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel)
             background_tasks[session_id] = future
@@ -538,6 +546,7 @@ def run_background_invite(session_id, participants, delay_range, client, target_
         try:
             for participant in participants:
                 try:
+                    print(participant,file=sys.stderr)
                     # For phone-only participants, try to import contact first
                     if participant.get('id') is None and participant.get('phone'):
                         try:

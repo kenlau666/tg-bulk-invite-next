@@ -103,6 +103,7 @@ export class TelegramService {
     phoneNumbers: string[];
     targetGroup: string;
     delayRange: DelayRange;
+    interactive?: boolean;
   }) {
     try {
       const response = await axios.post('/api/inviteByPhoneNumbers', data);

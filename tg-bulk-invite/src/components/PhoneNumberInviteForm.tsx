@@ -9,10 +9,18 @@ interface PhoneNumberInviteFormProps {
       max: number;
     };
   }) => void;
+  onInteractiveSubmit: (data: {
+    phoneNumbers: string[];
+    targetGroup: string;
+    delayRange: {
+      min: number;
+      max: number;
+    };
+  }) => void;
   disabled?: boolean;
 }
 
-export default function PhoneNumberInviteForm({ onSubmit, disabled }: PhoneNumberInviteFormProps) {
+export default function PhoneNumberInviteForm({ onSubmit, onInteractiveSubmit, disabled }: PhoneNumberInviteFormProps) {
   const [phoneNumbers, setPhoneNumbers] = useState<string>('');
   const [targetGroup, setTargetGroup] = useState<string>('');
   const [delayRange, setDelayRange] = useState({
@@ -28,6 +36,19 @@ export default function PhoneNumberInviteForm({ onSubmit, disabled }: PhoneNumbe
       .filter(phone => phone.length > 0);
 
     onSubmit({
+      phoneNumbers: phoneNumberList,
+      targetGroup: targetGroup.trim(),
+      delayRange
+    });
+  };
+
+  const handleInteractiveSubmit = () => {
+    const phoneNumberList = phoneNumbers
+      .split(',')
+      .map(phone => phone.trim())
+      .filter(phone => phone.length > 0);
+
+    onInteractiveSubmit({
       phoneNumbers: phoneNumberList,
       targetGroup: targetGroup.trim(),
       delayRange
@@ -111,17 +132,30 @@ export default function PhoneNumberInviteForm({ onSubmit, disabled }: PhoneNumbe
           </p>
         </div>
 
-        <div>
+        <div className="grid grid-cols-2 gap-4">
           <button
-            type="submit"
+            type="button"
             disabled={disabled}
-            className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+            onClick={handleInteractiveSubmit}
+            className={`flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
               disabled 
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
             }`}
           >
-            {disabled ? 'Processing...' : 'Invite by Phone Numbers'}
+            {disabled ? 'Processing...' : 'Start Interactive Invite'}
+          </button>
+
+          <button
+            type="submit"
+            disabled={disabled}
+            className={`flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+              disabled 
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
+            }`}
+          >
+            {disabled ? 'Processing...' : 'Start Background Invite'}
           </button>
         </div>
       </form>
