@@ -10,7 +10,7 @@ const nextConfig = {
         destination:
           process.env.NODE_ENV === "development"
             ? "http://127.0.0.1:5328/api/:path*"
-            : "http://tg.surftunnel88.com/api/:path*",
+            : "http://34.92.136.54:5328/api/:path*",
       },
     ];
   },
