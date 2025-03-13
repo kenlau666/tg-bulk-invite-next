@@ -36,20 +36,12 @@ def async_route(f):
         return loop.run_until_complete(f(*args, **kwargs))
     return wrapped
 
-def async_route_new_loop(f):
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        new_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(new_loop)
-        return new_loop.run_until_complete(f(*args, **kwargs))
-    return wrapped
-
 @app.route("/api/python")
 def hello_world():
     return "<p>Hello, World!</p>"
 
 @app.route('/api/connect', methods=['POST'])
-@async_route_new_loop
+@async_route
 async def connect():
     data = request.json
     api_id = data.get('apiId')
@@ -67,10 +59,7 @@ async def connect():
                 
                 if await client.is_user_authorized():
                     # Store the current event loop for this session
-                    current_loop = asyncio.get_event_loop()
-                    session_event_loops[session_id] = current_loop
-                    print(f"Stored event loop for authenticated session {session_id}: {current_loop}", file=sys.stderr)
-                    
+                    session_event_loops[session_id] = asyncio.get_event_loop()
                     return jsonify({
                         'success': True,
                         'message': 'Successfully authenticated'
@@ -88,45 +77,40 @@ async def connect():
                     }), 400
                 raise e
 
-        # Generate a new session ID for this connection
-        new_session_id = str(random.randint(10000, 99999))
-        
-        # Store the current event loop for this new session
-        current_loop = asyncio.get_event_loop()
-        session_event_loops[new_session_id] = current_loop
-        print(f"Stored event loop for new session {new_session_id}: {current_loop}", file=sys.stderr)
-
         # Initial connection
         client = TelegramClient(StringSession(), int(api_id), api_hash)
         
-        # Store the client in active_clients
-        active_clients[new_session_id] = {
-            'client': client,
-            'phone': phone
-        }
-        
         # Define code callback that will raise an exception to handle it later
         async def code_callback():
-            raise CodeRequiredException(new_session_id)
+            session_id = str(random.randint(10000, 99999))
+            active_clients[session_id] = {
+                'client': client,
+                'phone': phone
+            }
+            # Store the current event loop for this session
+            session_event_loops[session_id] = asyncio.get_event_loop()
+            raise CodeRequiredException(session_id)
 
         try:
             await client.start(phone=phone, code_callback=code_callback)
             
             # If we get here, user is already authorized
+            # Store the current event loop for this session
+            session_id = str(random.randint(10000, 99999))
+            active_clients[session_id] = {
+                'client': client,
+                'phone': phone
+            }
+            session_event_loops[session_id] = asyncio.get_event_loop()
+            
             return jsonify({
                 'success': True,
                 'message': 'Already authorized',
-                'sessionId': new_session_id
+                'sessionId': session_id
             })
 
         except Exception as e:
             if "UPDATE_APP_TO_LOGIN" in str(e):
-                # Clean up if there's an error
-                if new_session_id in active_clients:
-                    del active_clients[new_session_id]
-                if new_session_id in session_event_loops:
-                    del session_event_loops[new_session_id]
-                    
                 return jsonify({
                     'success': False,
                     'message': 'This phone number is not supported. Please try a different phone number.'
@@ -135,18 +119,12 @@ async def connect():
                 return jsonify({
                     'success': True,
                     'message': 'A verification code has been sent to your phone. Please enter the verification code.',
-                    'sessionId': new_session_id
+                    'sessionId': e.session_id
                 })
             raise e
 
     except Exception as e:
         print(f"Connection error: {str(e)}")
-        # Clean up if there's an error
-        if 'new_session_id' in locals() and new_session_id in active_clients:
-            del active_clients[new_session_id]
-        if 'new_session_id' in locals() and new_session_id in session_event_loops:
-            del session_event_loops[new_session_id]
-            
         return jsonify({
             'success': False,
             'message': str(e)
@@ -703,9 +681,12 @@ def run_background_invite(session_id, participants, delay_range, client, target_
             traceback.print_exc(file=sys.stderr)
 
     # Create and start the thread
+    print(f"Creating thread for session {session_id}", file=sys.stderr)
     thread = threading.Thread(target=thread_target)
     thread.daemon = True  # Make thread daemon so it won't prevent server shutdown
+    print(f"Starting thread for session {session_id}", file=sys.stderr)
     thread.start()
+    print(f"Thread started for session {session_id}: {thread}", file=sys.stderr)
     
     return thread
 
