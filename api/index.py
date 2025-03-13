@@ -1,3 +1,4 @@
+import threading
 from flask import Flask, request, jsonify
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -22,6 +23,9 @@ active_tasks = {}
 # Add this global variable to store background tasks
 background_tasks = {}
 
+# Add a dictionary to store event loops for each session
+session_event_loops = {}
+
 # Create and set a single event loop for the application
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -32,12 +36,20 @@ def async_route(f):
         return loop.run_until_complete(f(*args, **kwargs))
     return wrapped
 
+def async_route_new_loop(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        return new_loop.run_until_complete(f(*args, **kwargs))
+    return wrapped
+
 @app.route("/api/python")
 def hello_world():
     return "<p>Hello, World!</p>"
 
 @app.route('/api/connect', methods=['POST'])
-@async_route
+@async_route_new_loop
 async def connect():
     data = request.json
     api_id = data.get('apiId')
@@ -54,6 +66,11 @@ async def connect():
                 await client.sign_in(phone=active_clients[session_id]['phone'], code=code)
                 
                 if await client.is_user_authorized():
+                    # Store the current event loop for this session
+                    current_loop = asyncio.get_event_loop()
+                    session_event_loops[session_id] = current_loop
+                    print(f"Stored event loop for authenticated session {session_id}: {current_loop}", file=sys.stderr)
+                    
                     return jsonify({
                         'success': True,
                         'message': 'Successfully authenticated'
@@ -71,17 +88,26 @@ async def connect():
                     }), 400
                 raise e
 
+        # Generate a new session ID for this connection
+        new_session_id = str(random.randint(10000, 99999))
+        
+        # Store the current event loop for this new session
+        current_loop = asyncio.get_event_loop()
+        session_event_loops[new_session_id] = current_loop
+        print(f"Stored event loop for new session {new_session_id}: {current_loop}", file=sys.stderr)
+
         # Initial connection
         client = TelegramClient(StringSession(), int(api_id), api_hash)
         
+        # Store the client in active_clients
+        active_clients[new_session_id] = {
+            'client': client,
+            'phone': phone
+        }
+        
         # Define code callback that will raise an exception to handle it later
         async def code_callback():
-            session_id = str(random.randint(10000, 99999))
-            active_clients[session_id] = {
-                'client': client,
-                'phone': phone
-            }
-            raise CodeRequiredException(session_id)
+            raise CodeRequiredException(new_session_id)
 
         try:
             await client.start(phone=phone, code_callback=code_callback)
@@ -89,11 +115,18 @@ async def connect():
             # If we get here, user is already authorized
             return jsonify({
                 'success': True,
-                'message': 'Already authorized'
+                'message': 'Already authorized',
+                'sessionId': new_session_id
             })
 
         except Exception as e:
             if "UPDATE_APP_TO_LOGIN" in str(e):
+                # Clean up if there's an error
+                if new_session_id in active_clients:
+                    del active_clients[new_session_id]
+                if new_session_id in session_event_loops:
+                    del session_event_loops[new_session_id]
+                    
                 return jsonify({
                     'success': False,
                     'message': 'This phone number is not supported. Please try a different phone number.'
@@ -102,12 +135,18 @@ async def connect():
                 return jsonify({
                     'success': True,
                     'message': 'A verification code has been sent to your phone. Please enter the verification code.',
-                    'sessionId': e.session_id
+                    'sessionId': new_session_id
                 })
             raise e
 
     except Exception as e:
         print(f"Connection error: {str(e)}")
+        # Clean up if there's an error
+        if 'new_session_id' in locals() and new_session_id in active_clients:
+            del active_clients[new_session_id]
+        if 'new_session_id' in locals() and new_session_id in session_event_loops:
+            del session_event_loops[new_session_id]
+            
         return jsonify({
             'success': False,
             'message': str(e)
@@ -542,10 +581,22 @@ async def invite_by_phone_numbers():
         }), 500
 
 def run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel):
+    print(f"Running background invite for session {session_id}", file=sys.stderr)
+    # Check if we have an event loop for this session
+    if session_id not in session_event_loops:
+        print(f"No event loop found for session {session_id}", file=sys.stderr)
+        raise ValueError(f"No event loop found for session {session_id}")
+    
+    # Get the event loop for this session
+    session_loop = session_event_loops[session_id]
+    print(f"Using event loop for session {session_id}: {session_loop}", file=sys.stderr)
+    
     async def _invite_participants():
+        print(f"Inviting participants in session {session_id}", file=sys.stderr)
         try:
             for participant in participants:
-                try:                    # For phone-only participants, try to import contact first
+                try:
+                    # For phone-only participants, try to import contact first
                     if participant.get('id') is None and participant.get('phone'):
                         try:
                             # Import contact
@@ -635,10 +686,28 @@ def run_background_invite(session_id, participants, delay_range, client, target_
                 del background_tasks[session_id]
                 print(f"Background task for session {session_id} completed", file=sys.stderr)
 
-    # Schedule the coroutine to run in the existing event loop
-    # Store the future so we can check its status later
-    future = asyncio.run_coroutine_threadsafe(_invite_participants(), loop)
-    return future
+    # This function will be run in a separate thread to handle the session's event loop
+    def thread_target():
+        try:
+            print(f"Thread started for session {session_id}", file=sys.stderr)
+            # Set this thread's event loop to the session's event loop
+            asyncio.set_event_loop(session_loop)
+            print(f"Set event loop for thread: {asyncio.get_event_loop()}", file=sys.stderr)
+            
+            # Run the coroutine in this thread's event loop
+            session_loop.run_until_complete(_invite_participants())
+            print(f"Invite process completed for session {session_id}", file=sys.stderr)
+        except Exception as e:
+            print(f"Background task error for session {session_id}: {str(e)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+
+    # Create and start the thread
+    thread = threading.Thread(target=thread_target)
+    thread.daemon = True  # Make thread daemon so it won't prevent server shutdown
+    thread.start()
+    
+    return thread
 
 @app.route('/api/startBackgroundInvite', methods=['POST'])
 @async_route
@@ -647,35 +716,59 @@ async def start_background_invite():
     session_id = data.get('sessionId')
     delay_range = data.get('delayRange', {'min': 60, 'max': 60})
     participants = data.get('participants')
+    
+    print(f"startBackgroundInvite called for session {session_id} with {len(participants) if participants else 0} participants", file=sys.stderr)
 
     if session_id not in active_clients:
+        print(f"No active session found for session {session_id}", file=sys.stderr)
         return jsonify({
             'success': False,
             'message': 'No active session found'
         }), 400
+        
+    print(f"Active client found for session {session_id}", file=sys.stderr)
+        
+    if session_id not in session_event_loops:
+        print(f"No event loop found for session {session_id}", file=sys.stderr)
+        # Let's store the current event loop for this session
+        session_event_loops[session_id] = asyncio.get_event_loop()
+        print(f"Created new event loop for session {session_id}: {session_event_loops[session_id]}", file=sys.stderr)
 
     client = active_clients[session_id]['client']
-    target_entity = active_clients[session_id]['target_entity']
-    is_channel = active_clients[session_id]['is_channel']
+    target_entity = active_clients[session_id].get('target_entity')
+    is_channel = active_clients[session_id].get('is_channel')
+    
+    print(f"Client: {client}, Target entity: {target_entity}, Is channel: {is_channel}", file=sys.stderr)
+
+    if not target_entity:
+        print(f"No target entity found for session {session_id}", file=sys.stderr)
+        return jsonify({
+            'success': False,
+            'message': 'No target group selected'
+        }), 400
 
     if not participants:
+        print(f"No participants to invite for session {session_id}", file=sys.stderr)
         return jsonify({
             'success': False,
             'message': 'No participants to invite'
         }), 400
 
     try:
+        print(f"About to start background invite for session {session_id}", file=sys.stderr)
         # Cancel existing background task if any
         if session_id in background_tasks:
-            try:
-                background_tasks[session_id].cancel()
-                print(f"Cancelled existing background task for session {session_id}", file=sys.stderr)
-            except Exception as e:
-                print(f"Error cancelling task: {str(e)}", file=sys.stderr)
+            print(f"Found existing background task for session {session_id}", file=sys.stderr)
+            # We can't really cancel a thread, but we can remove it from our tracking
+            print(f"Previous background task for session {session_id} will continue running", file=sys.stderr)
+            del background_tasks[session_id]
 
-        # Start new background task and store the future
-        future = run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel)
-        background_tasks[session_id] = future
+        # Start new background thread
+        print(f"Calling run_background_invite for session {session_id}", file=sys.stderr)
+        thread = run_background_invite(session_id, participants, delay_range, client, target_entity, is_channel)
+        print(f"Background thread created for session {session_id}: {thread}", file=sys.stderr)
+        background_tasks[session_id] = thread
+        print(f"Background thread stored in background_tasks for session {session_id}", file=sys.stderr)
 
         return jsonify({
             'success': True,
@@ -683,7 +776,9 @@ async def start_background_invite():
         })
 
     except Exception as e:
-        print(f"Error starting background invite: {str(e)}", file=sys.stderr)
+        print(f"Error starting background invite for session {session_id}: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         return jsonify({
             'success': False,
             'message': str(e)
