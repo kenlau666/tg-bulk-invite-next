@@ -664,29 +664,27 @@ def run_background_invite(session_id, participants, delay_range, client, target_
                 del background_tasks[session_id]
                 print(f"Background task for session {session_id} completed", file=sys.stderr)
 
-    # This function will be run in a separate thread to handle the session's event loop
+    # Create a task in the session's event loop
+    print(f"Creating task in session loop for {session_id}", file=sys.stderr)
+    task = asyncio.run_coroutine_threadsafe(_invite_participants(), session_loop)
+    
+    # This function will be run in a separate thread to monitor the task
     def thread_target():
         try:
-            print(f"Thread started for session {session_id}", file=sys.stderr)
-            # Set this thread's event loop to the session's event loop
-            asyncio.set_event_loop(session_loop)
-            print(f"Set event loop for thread: {asyncio.get_event_loop()}", file=sys.stderr)
-            
-            # Run the coroutine in this thread's event loop
-            session_loop.run_until_complete(_invite_participants())
-            print(f"Invite process completed for session {session_id}", file=sys.stderr)
+            print(f"Thread started for monitoring task in session {session_id}", file=sys.stderr)
+            # Wait for the task to complete
+            task.result()
+            print(f"Task completed for session {session_id}", file=sys.stderr)
         except Exception as e:
-            print(f"Background task error for session {session_id}: {str(e)}", file=sys.stderr)
+            print(f"Task error for session {session_id}: {str(e)}", file=sys.stderr)
             import traceback
             traceback.print_exc(file=sys.stderr)
 
-    # Create and start the thread
-    print(f"Creating thread for session {session_id}", file=sys.stderr)
+    # Create and start the monitoring thread
+    print(f"Creating monitoring thread for session {session_id}", file=sys.stderr)
     thread = threading.Thread(target=thread_target)
     thread.daemon = True  # Make thread daemon so it won't prevent server shutdown
-    print(f"Starting thread for session {session_id}", file=sys.stderr)
     thread.start()
-    print(f"Thread started for session {session_id}: {thread}", file=sys.stderr)
     
     return thread
 
