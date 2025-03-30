@@ -394,8 +394,12 @@ async def get_participants():
                                 participants.extend(message_participants)
 
                             # Process participants
+                            print(len(participants), file=sys.stderr)
+                            count = 0 
                             for participant in participants:
                                 # Check eligibility criteria
+                                print(count, file=sys.stderr)
+                                count = count + 1
                                 if process_participant(participant, target_member_ids, previously_invited_to_target, only_recently_active):
                                     group_eligible_participants.append(participant_to_dict(participant))
 
@@ -458,6 +462,7 @@ async def get_participants():
                 # Gather results from all groups
                 group_results = await asyncio.gather(*group_tasks, return_exceptions=True)
                 
+                print("group task finish", file=sys.stderr)
                 # Combine eligible participants from all groups
                 for result in group_results:
                     if not isinstance(result, Exception) and result:
@@ -501,7 +506,7 @@ async def get_participants():
                         is_recently_active = True
                 except Exception as e:
                     print(f"Error checking user status: {str(e)}", file=sys.stderr)
-                    is_recently_active = True  # Include by default if error
+                    return False
 
             return (participant.id not in target_member_ids and 
                     participant.id not in previously_invited_to_target and
@@ -577,74 +582,46 @@ async def invite_participant():
         # Get the session's event loop
         loop = session_event_loops[session_id]
         
-        # Create a future to store the result
-        result_future = asyncio.Future(loop=main_loop)
-        
-        # Define the function to run in the session's thread
-        def run_invite_participant():
+        # Define the async function to run in the session's event loop
+        async def _invite_participant():
             try:
-                # Set the event loop for this thread
-                asyncio.set_event_loop(loop)
-                
-                # Define the async function to run in the session's event loop
-                async def _invite_participant():
-                    try:
-                        # Add to contacts
-                        await client(AddContactRequest(
-                            id=participant['id'],
-                            first_name=participant['firstName'] or '',
-                            last_name=participant['lastName'] or '',
-                            phone=participant['phone'] or '',
-                            add_phone_privacy_exception=False
-                        ))
+                # Add to contacts
+                await client(AddContactRequest(
+                    id=participant['id'],
+                    first_name=participant['firstName'] or '',
+                    last_name=participant['lastName'] or '',
+                    phone=participant['phone'] or '',
+                    add_phone_privacy_exception=False
+                ))
 
-                        # Invite to group
-                        if is_channel:
-                            await client(InviteToChannelRequest(
-                                channel=target_entity,
-                                users=[participant['id']]
-                            ))
-                        else:
-                            await client(AddChatUserRequest(
-                                chat_id=target_entity.chat_id,
-                                user_id=participant['id'],
-                                fwd_limit=300
-                            ))
-
-                        return {
-                            'success': True,
-                            'message': 'Successfully invited participant'
-                        }
-                    except Exception as e:
-                        print(f"Failed to process {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
-                        return {
-                            'success': False,
-                            'message': str(e)
-                        }
-                
-                # Run the async function in the session's event loop
-                task = asyncio.run_coroutine_threadsafe(_invite_participant(), loop)
-                
-                # Set the result in the future - no timeout
-                result = task.result()
-                main_loop.call_soon_threadsafe(lambda r=result: result_future.set_result(r))
+                # Invite to group
+                if is_channel:
+                    await client(InviteToChannelRequest(
+                        channel=target_entity,
+                        users=[participant['id']]
+                    ))
+                else:
+                    await client(AddChatUserRequest(
+                        chat_id=target_entity.chat_id,
+                        user_id=participant['id'],
+                        fwd_limit=300
+                    ))
+                return {
+                    'success': True,
+                    'message': f"Successfully invited {participant['firstName'] or 'User'}"
+                }
             except Exception as e:
-                # Set the exception in the future - properly capture e in the lambda
-                error_str = str(e)
-                main_loop.call_soon_threadsafe(lambda err=error_str: result_future.set_exception(Exception(err)))
+                print(f"Error processing {participant['firstName'] or 'User'}: {str(e)}", file=sys.stderr)
+                return {
+                    'success': False,
+                    'message': str(e)
+                }
         
-        # Schedule the function to run in the session's thread
-        loop.call_soon_threadsafe(run_invite_participant)
+        # Run the coroutine in the session's event loop
+        future = asyncio.run_coroutine_threadsafe(_invite_participant(), loop)
         
-        # Wait for the result - no timeout
-        result = await result_future
-        
-        if not result['success']:
-            return jsonify({
-                'success': False,
-                'message': result['message']
-            }), 500
-        
+        # Wait for the result without timeout
+        result = future.result()
         return jsonify(result)
 
     except Exception as e:
@@ -1052,4 +1029,5 @@ if __name__ == '__main__':
         # Clean up all sessions when the app is shutting down
         for session_id in list(session_event_loops.keys()):
             cleanup_session(session_id)
+        main_loop.close() 
         main_loop.close() 

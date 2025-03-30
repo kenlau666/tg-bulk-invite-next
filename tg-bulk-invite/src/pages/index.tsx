@@ -145,13 +145,8 @@ export default function Home() {
 
           // Wait for a random delay within the range
           const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
-          await new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(resolve, delayMs);
-            
-            if (stopRef.current) {
-              clearTimeout(timeoutId);
-              reject(new Error('Stopped by user'));
-            }
+          await new Promise(resolve => {
+            setTimeout(resolve, delayMs);
           });
 
         } catch (error) {
@@ -167,13 +162,8 @@ export default function Home() {
 
           // Wait for a random delay before next attempt
           const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
-          await new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(resolve, delayMs);
-            
-            if (stopRef.current) {
-              clearTimeout(timeoutId);
-              reject(new Error('Stopped by user'));
-            }
+          await new Promise(resolve => {
+            setTimeout(resolve, delayMs);
           });
         }
       }
@@ -341,13 +331,8 @@ export default function Home() {
 
           // Wait for a random delay within the range
           const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
-          await new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(resolve, delayMs);
-            
-            if (stopRef.current) {
-              clearTimeout(timeoutId);
-              reject(new Error('Stopped by user'));
-            }
+          await new Promise(resolve => {
+            setTimeout(resolve, delayMs);
           });
 
         } catch (error) {
@@ -365,13 +350,8 @@ export default function Home() {
 
           // Wait for a random delay before next attempt
           const delayMs = Math.floor(Math.random() * (data.delayRange.max - data.delayRange.min + 1) + data.delayRange.min) * 1000;
-          await new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(resolve, delayMs);
-            
-            if (stopRef.current) {
-              clearTimeout(timeoutId);
-              reject(new Error('Stopped by user'));
-            }
+          await new Promise(resolve => {
+            setTimeout(resolve, delayMs);
           });
         }
       }
