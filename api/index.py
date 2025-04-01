@@ -399,9 +399,9 @@ async def get_participants():
                                 # Combine participants from both methods
                                 participants.extend(message_participants)
 
-                            # if max_per_group > 0 and len(participants) > max_per_group:
-                            #     participants = participants[:max_per_group]
-                            # Process participants
+                            if max_per_group > 0 and len(participants) > max_per_group:
+                                participants = participants[:max_per_group]
+
                             for participant in participants:
                                 # Check eligibility criteria
                                 if process_participant(participant, target_member_ids, previously_invited_to_target, only_recently_active):
