@@ -1025,4 +1025,3 @@ if __name__ == '__main__':
         for session_id in list(session_event_loops.keys()):
             cleanup_session(session_id)
         main_loop.close() 
-        main_loop.close() 
