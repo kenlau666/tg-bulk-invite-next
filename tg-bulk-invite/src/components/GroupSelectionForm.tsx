@@ -29,7 +29,7 @@ interface GroupSelectionFormProps {
 export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disabled }: GroupSelectionFormProps) {
   const [sourceGroups, setSourceGroups] = useState<string>('');
   const [targetGroup, setTargetGroup] = useState<string>('');
-  const [maxPerGroup, setMaxPerGroup] = useState<number>(0); // 0 means no limit
+  const [maxPerGroup, setMaxPerGroup] = useState<number>(1000); // 0 means no limit
   const [delayRange, setDelayRange] = useState({
     min: 60,
     max: 60
@@ -105,7 +105,7 @@ export default function GroupSelectionForm({ onSubmit, onBackgroundSubmit, disab
 
         <div>
           <label htmlFor="maxPerGroup" className="block text-sm font-medium text-gray-700">
-            Max Members per Source Group (0 for no limit)
+            Max Members per Source Group (max 5000)
           </label>
           <input
             type="number"

@@ -354,21 +354,27 @@ async def get_participants():
                 # Create a task for each source group
                 async def process_group(group_link):
                     try:
+                        print("process group", file=sys.stderr)
                         group_eligible_participants = []
                         
                         # Get group info first
                         group_entity = await client.get_input_entity(group_link)
-                        
+                        print("get_input_entity", file=sys.stderr)
+
                         try:
                             # Try to get full channel info
+                            print("GetFullChannelRequest", file=sys.stderr)
                             full_channel = await client(GetFullChannelRequest(channel=group_entity))
                             total_participants = full_channel.full_chat.participants_count
                             
                             # Try to get participants directly first
-                            participants = await client.get_participants(group_link)
-                            
+                            print("get_participants", file=sys.stderr)
+
+                            participants = await client.get_participants(group_link, limit=max_per_group)
+                            print(len(participants), file=sys.stderr)
                             # If we can't get all participants, use message history
-                            if len(participants) < total_participants:
+                            if len(participants) < total_participants and len(participants) < 99:
+                                participants = []
                                 seen_senders = set()
                                 message_participants = []
                                 
@@ -393,20 +399,13 @@ async def get_participants():
                                 # Combine participants from both methods
                                 participants.extend(message_participants)
 
+                            # if max_per_group > 0 and len(participants) > max_per_group:
+                            #     participants = participants[:max_per_group]
                             # Process participants
-                            print(len(participants), file=sys.stderr)
-                            count = 0 
                             for participant in participants:
                                 # Check eligibility criteria
-                                print(count, file=sys.stderr)
-                                count = count + 1
                                 if process_participant(participant, target_member_ids, previously_invited_to_target, only_recently_active):
                                     group_eligible_participants.append(participant_to_dict(participant))
-
-                            # Apply max per group limit if set
-                            if max_per_group > 0:
-                                group_eligible_participants = group_eligible_participants[:max_per_group]
-
                             return group_eligible_participants
 
                         except ChatAdminRequiredError:
@@ -438,10 +437,6 @@ async def get_participants():
                                 if process_participant(participant, target_member_ids, previously_invited_to_target, only_recently_active):
                                     group_eligible_participants.append(participant_to_dict(participant))
 
-                            # Apply max per group limit if set
-                            if max_per_group > 0:
-                                group_eligible_participants = group_eligible_participants[:max_per_group]
-
                             return group_eligible_participants
 
                     except Exception as e:
@@ -458,11 +453,9 @@ async def get_participants():
                 
                 # Create tasks for each source group
                 group_tasks = [asyncio.create_task(process_group(group_link)) for group_link in source_groups]
-                
                 # Gather results from all groups
                 group_results = await asyncio.gather(*group_tasks, return_exceptions=True)
                 
-                print("group task finish", file=sys.stderr)
                 # Combine eligible participants from all groups
                 for result in group_results:
                     if not isinstance(result, Exception) and result:
@@ -523,18 +516,20 @@ async def get_participants():
                     status_text = "Online recently"
                 else:
                     status_text = str(participant.status)
+                      
+                return {
+                    'id': participant.id,
+                    'firstName': participant.first_name,
+                    'lastName': participant.last_name,
+                    'username': participant.username,
+                    'phone': participant.phone,
+                    'status': 'pending',
+                    'lastSeen': status_text
+                }
+            
             except:
                 pass
-                
-            return {
-                'id': participant.id,
-                'firstName': participant.first_name,
-                'lastName': participant.last_name,
-                'username': participant.username,
-                'phone': participant.phone,
-                'status': 'pending',
-                'lastSeen': status_text
-            }
+
         
         # Run the async function in the session's event loop
         future = asyncio.run_coroutine_threadsafe(_get_participants(), loop)
