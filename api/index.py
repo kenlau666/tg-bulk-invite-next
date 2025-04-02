@@ -98,7 +98,7 @@ def hello_world():
 
 @app.route("/api/pythonasync")
 @async_route
-async def hello_world():
+async def hello_world_async():
     return "<p>Hello, World! async</p>"
 
 @app.route('/api/connect', methods=['POST'])
