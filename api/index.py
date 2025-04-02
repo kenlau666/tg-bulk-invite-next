@@ -96,7 +96,7 @@ def async_route(f):
 def hello_world():
     return "<p>Hello, World!</p>"
 
-@app.route("/api/python/async")
+@app.route("/api/pythonasync")
 @async_route
 async def hello_world():
     return "<p>Hello, World! async</p>"
