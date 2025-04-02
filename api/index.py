@@ -98,7 +98,7 @@ def hello_world():
 
 @app.route("/api/pythonasync")
 @async_route
-async def hello_world():
+async def hello_world_async():
     return "<p>Hello, World! async</p>"
 
 @app.route('/api/connect', methods=['POST'])
@@ -211,7 +211,11 @@ async def connect():
         # This follows the pattern in asyncio_loop_in_thread.py
         print("Running _create_and_start in session thread", file=sys.stderr)
         future = asyncio.run_coroutine_threadsafe(_create_and_start(), loop)
-        
+        return jsonify({
+            'success': False,
+            'message': "running _create"
+        }), 500
+    
         try:
             # Wait for the result without timeout
             print("Waiting for future result", file=sys.stderr)

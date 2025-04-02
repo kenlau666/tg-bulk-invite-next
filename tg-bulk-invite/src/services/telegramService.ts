@@ -45,7 +45,7 @@ export class TelegramService {
           'Content-Type': 'application/json',
         },
       });
-
+      console.log(response.data)
       return response.data; // Axios automatically parses the JSON response
     } catch (error: any) {
       console.error('Connection error:', error);
