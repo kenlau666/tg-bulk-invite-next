@@ -96,6 +96,11 @@ def async_route(f):
 def hello_world():
     return "<p>Hello, World!</p>"
 
+@app.route("/api/python/aysnc")
+@async_route
+async def hello_world():
+    return "<p>Hello, World!</p>"
+
 @app.route('/api/connect', methods=['POST'])
 @async_route
 async def connect():
