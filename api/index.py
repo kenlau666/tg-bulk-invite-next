@@ -2,7 +2,6 @@ import asyncio
 import concurrent.futures
 import random
 import sys
-import time
 from functools import wraps
 from threading import Thread
 
@@ -1178,11 +1177,8 @@ async def start_background_invite():
 
 def run_app():
     try:
-        # Configure Flask for better request handling
-        app.config["PROPAGATE_EXCEPTIONS"] = True  # Make sure exceptions are propagated
-        app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max upload
-
         # Run the Flask app with a longer timeout
+        print("Starting Flask app...", file=sys.stderr)
         app.run(port=5328, debug=True, threaded=True, request_handler=None)
     except Exception as e:
         print(f"Error running Flask app: {str(e)}", file=sys.stderr)
