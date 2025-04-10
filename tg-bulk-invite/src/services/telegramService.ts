@@ -77,6 +77,7 @@ export class TelegramService {
   }) {
     try {
       const response = await axios.post('/api/inviteParticipant', data);
+      console.log(response.data)
       return response.data;
     } catch (error: any) {
       console.error('Error inviting participant:', error);
